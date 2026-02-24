@@ -1,0 +1,34 @@
+{
+  "name": "@intent-ide/agent-orchestrator",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@intent-ide/core": "workspace:*",
+    "@intent-ide/context-engine": "workspace:*",
+    "@intent-ide/llm-orchestrator": "workspace:*",
+    "@intent-ide/diff-engine": "workspace:*",
+    "@intent-ide/intent-parser": "workspace:*",
+    "simple-git": "^3.27.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
