@@ -1,111 +1,70 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useAgentStore } from '../../stores/agentStore.js';
-
-interface GoalItem {
-  type: 'goal';
-  content: string;
-}
-
-interface ResponseItem {
-  type: 'response';
-  content: string;
-}
-
-interface SubAgentItem {
-  type: 'sub-agent';
-  name: string;
-  status: 'Running...' | 'Complete' | 'Failed';
-  description: string;
-  code?: string;
-}
-
-interface TimestampItem {
-  type: 'timestamp';
-  label: string;
-}
-
-type ConversationItem = GoalItem | ResponseItem | SubAgentItem | TimestampItem;
-
-const MOCK_CONVERSATION: ConversationItem[] = [
-  {
-    type: 'goal',
-    content:
-      'Create the Intent product page with hero section, feature sections, and download CTA.',
-  },
-  {
-    type: 'response',
-    content:
-      "I'll create the Intent product page. Let me set up the route and build each section.",
-  },
-  { type: 'timestamp', label: '3d ago' },
-  {
-    type: 'goal',
-    content:
-      'Update the hero with a high-fidelity app mockup and fix the overlapping content issue.',
-  },
-  {
-    type: 'response',
-    content:
-      "I'll redesign the hero section with a detailed mockup. Spawning an agent to handle this.",
-  },
-  {
-    type: 'sub-agent',
-    name: 'Hero Redesign Agent',
-    status: 'Complete',
-    description: 'Created 3-panel app mockup with theme support',
-  },
-  { type: 'timestamp', label: '2d ago' },
-  {
-    type: 'goal',
-    content:
-      'Implement an interactive UI mockup for the hero section. Also need to build the mobile responsive view for the entire page.',
-  },
-  {
-    type: 'response',
-    content:
-      "I'll break this into two parallel tasks. Let me spawn sub-agents to work on each:",
-  },
-  {
-    type: 'sub-agent',
-    name: 'Hero Mockup Agent',
-    status: 'Running...',
-    description: 'Building interactive Intent app mockup with 3-panel layout',
-    code: `// intent-app-mockup.tsx
-export function IntentAppMockup() {
-  return (
-    <div className="flex">...`,
-  },
-  {
-    type: 'sub-agent',
-    name: 'Mobile View Agent',
-    status: 'Running...',
-    description: '',
-  },
-];
-
-const CONVERSATION_TABS = [
-  { id: 'coordinator', label: 'Coordinator', dotColor: '#22c55e' },
-  { id: 'hero-section', label: 'hero-section...', dotColor: '#f97316' },
-  { id: 'fix', label: '807245d: Fix...', dotColor: '#f97316' },
-];
+import { useAgentStore, type ConversationItemType } from '../../stores/agentStore.js';
+import { useProjectStore } from '../../stores/projectStore.js';
 
 export const ConversationPanel = React.memo(function ConversationPanel() {
-  const [activeTab, setActiveTab] = useState('coordinator');
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { startPipeline, pipelineStatus, currentSpec, events } = useAgentStore();
+  const { startPipeline, cancelPipeline, pipelineStatus, currentSpec, conversationItems } = useAgentStore();
+  const { projectPath } = useProjectStore();
+
+  const isRunning = pipelineStatus === 'running';
+
+  // 동적 탭 생성
+  const tabs = React.useMemo(() => {
+    const agentTabs: { id: string; label: string; dotColor: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const item of conversationItems) {
+      if (
+        (item.type === 'agent-started' || item.type === 'agent-progress' || item.type === 'agent-completed') &&
+        !seen.has(item.agentId) &&
+        item.agentId !== 'coordinator'
+      ) {
+        seen.add(item.agentId);
+        const color = item.type === 'agent-completed' ? '#22c55e' : '#f97316';
+        agentTabs.push({
+          id: item.agentId,
+          label: item.agentId.length > 14 ? item.agentId.slice(0, 12) + '...' : item.agentId,
+          dotColor: color,
+        });
+      }
+    }
+
+    return [
+      { id: 'coordinator', label: 'Coordinator', dotColor: '#9333ea' },
+      ...agentTabs,
+    ];
+  }, [conversationItems]);
+
+  const [activeTab, setActiveTab] = useState('coordinator');
+
+  // activeTab이 tabs에 없으면 coordinator로 리셋
+  useEffect(() => {
+    if (!tabs.find(t => t.id === activeTab)) {
+      setActiveTab('coordinator');
+    }
+  }, [tabs, activeTab]);
+
+  // 탭별 필터링된 아이템
+  const filteredItems = React.useMemo(() => {
+    if (activeTab === 'coordinator') return conversationItems;
+    return conversationItems.filter(item => {
+      if ('agentId' in item) return item.agentId === activeTab;
+      return false;
+    });
+  }, [conversationItems, activeTab]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [events.length]);
+  }, [filteredItems.length]);
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || pipelineStatus === 'running') {
-      return;
-    }
+    if (!input.trim() || isRunning || !projectPath) return;
+    const goal = input.trim();
     setInput('');
-    await startPipeline(input.trim(), '/');
-  }, [input, pipelineStatus, startPipeline]);
+    await startPipeline(goal, projectPath);
+  }, [input, isRunning, projectPath, startPipeline]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -116,79 +75,86 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
     [handleSend]
   );
 
-  const handleTabClick = useCallback((id: string) => {
-    setActiveTab(id);
-  }, []);
-
-  const hasRealConversation = currentSpec !== null || events.length > 0;
-
   return (
-    <div className='flex flex-col h-full bg-[#18181c]'>
-      {/* Tab Bar */}
-      <div className='flex items-center h-9 border-b border-[#2a2a33] overflow-x-auto flex-shrink-0'>
-        {CONVERSATION_TABS.map((tab) => (
+    <div className='flex flex-col h-full bg-[#18181c] font-sans'>
+      {/* Breadcrumb */}
+      <div className='px-4 py-2 flex-shrink-0 border-b border-[#2a2a33] flex items-center justify-between h-9'>
+        <p className='text-[10px] tracking-widest text-[#505060] uppercase'>
+          {conversationItems.length > 0 ? 'MULTI-AGENT' : 'NEW SESSION'}
+        </p>
+        {isRunning && (
           <button
-            key={tab.id}
-            onClick={() => handleTabClick(tab.id)}
-            className={`flex items-center gap-1.5 px-3 h-full text-xs whitespace-nowrap border-r border-[#2a2a33] transition-colors flex-shrink-0 ${
-              tab.id === activeTab
-                ? 'bg-[#1c1c22] text-[#e4e4eb]'
-                : 'text-[#666672] hover:text-[#c4c4cc] hover:bg-[#1e1e24]'
-            }`}
+            onClick={() => void cancelPipeline()}
+            className='text-[10px] text-[#ef4444] hover:text-[#f87171] transition-colors flex items-center gap-1'
           >
-            <div
-              className='w-2 h-2 rounded-full flex-shrink-0'
-              style={{ backgroundColor: tab.dotColor }}
-            />
-            <span>{tab.label}</span>
-            <span className='ml-1 text-[#666672] hover:text-[#f38ba8]'>×</span>
+            <span className='w-1.5 h-1.5 bg-[#ef4444] rounded-sm inline-block' />
+            Stop
           </button>
-        ))}
+        )}
       </div>
 
-      {/* Breadcrumb */}
-      <div className='px-4 py-2 flex-shrink-0 border-b border-[#2a2a33]'>
-        <p className='text-[10px] tracking-widest text-[#505060] uppercase font-sans'>
-          AGENTS / COORDINATOR / COORDINATOR AGENT
-        </p>
-      </div>
+      {/* Tab Bar */}
+      {tabs.length > 1 && (
+        <div className='flex-shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-[#2a2a33] overflow-x-auto'>
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-[#2a2a33] text-[#e4e4eb]'
+                  : 'text-[#888892] hover:text-[#c4c4cc] hover:bg-[#1c1c22]'
+              }`}
+            >
+              <span
+                className='w-1.5 h-1.5 rounded-full flex-shrink-0'
+                style={{ backgroundColor: tab.dotColor }}
+              />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Messages */}
       <div className='flex-1 overflow-y-auto px-4 py-4 space-y-3'>
-        {!hasRealConversation &&
-          MOCK_CONVERSATION.map((item, idx) => (
-            <ConversationItemRenderer key={idx} item={item} />
-          ))}
+        {filteredItems.length === 0 && (
+          <div className='flex flex-col items-center justify-center h-full gap-2'>
+            {activeTab === 'coordinator' ? (
+              <>
+                <p className='text-sm text-[#505060]'>목표를 입력하세요</p>
+                <p className='text-xs text-[#383840]'>⌘↵ 로 전송</p>
+              </>
+            ) : (
+              <p className='text-xs text-[#505060]'>이 에이전트의 메시지가 없습니다</p>
+            )}
+          </div>
+        )}
 
-        {hasRealConversation && currentSpec && (
-          <>
-            <div className='rounded border border-[#1e4a1e] bg-[#0c1c0c] px-3 py-2.5'>
-              <p className='text-xs text-[#86efac] leading-relaxed'>{currentSpec.goal}</p>
-            </div>
-            <p className='text-xs text-[#c4c4cc] leading-relaxed'>
-              Processing your request. The agent pipeline is{' '}
-              {pipelineStatus === 'running' ? 'running' : pipelineStatus}...
-            </p>
+        {filteredItems.map((item, idx) => (
+          <ConversationItemRenderer key={idx} item={item} />
+        ))}
+
+        {/* Spec tasks (실시간 진행 상황) — coordinator 탭에서만 표시 */}
+        {activeTab === 'coordinator' && currentSpec !== null && currentSpec.tasks.length > 0 && isRunning && (
+          <div className='space-y-1.5'>
+            <p className='text-[10px] text-[#505060] uppercase tracking-wider'>Tasks</p>
             {currentSpec.tasks.map((task) => (
-              <div key={task.id} className='rounded border border-[#2a2a33] bg-[#1c1c22] px-3 py-2.5'>
+              <div key={task.id} className='rounded border border-[#2a2a33] bg-[#1c1c22] px-3 py-2'>
                 <div className='flex items-center justify-between'>
                   <div className='flex items-center gap-2'>
-                    <div
-                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        task.status === 'in_progress'
-                          ? 'bg-[#22c55e] animate-pulse'
-                          : task.status === 'completed'
-                            ? 'bg-[#86efac]'
-                            : 'bg-[#505060]'
-                      }`}
-                    />
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                      task.status === 'in_progress' ? 'bg-[#22c55e] animate-pulse' :
+                      task.status === 'completed' ? 'bg-[#86efac]' :
+                      task.status === 'failed' ? 'bg-[#ef4444]' : 'bg-[#505060]'
+                    }`} />
                     <span className='text-xs text-[#e4e4eb]'>{task.description}</span>
                   </div>
-                  <span className='text-xs text-[#666672] capitalize'>{task.status}</span>
+                  <span className='text-[10px] text-[#666672] capitalize'>{task.status.replace('_', ' ')}</span>
                 </div>
               </div>
             ))}
-          </>
+          </div>
         )}
 
         <div ref={messagesEndRef} />
@@ -197,147 +163,140 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
       {/* Input Area */}
       <div className='flex-shrink-0 border-t border-[#2a2a33]'>
         <div className='px-4 pt-3 pb-1'>
-          <input
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder='Type a message...'
-            className='w-full bg-transparent text-xs text-[#e4e4eb] placeholder-[#505060] focus:outline-none'
+            placeholder={isRunning ? 'Agent is working...' : 'Describe what you want to build or change...'}
+            disabled={isRunning}
+            rows={2}
+            className='w-full bg-transparent text-sm text-[#e4e4eb] placeholder-[#505060] focus:outline-none disabled:opacity-50 resize-none leading-relaxed'
           />
         </div>
         <div className='flex items-center justify-between px-4 pb-3 pt-1'>
-          <span className='text-xs text-[#505060]'>Claude Opus 4.6 @</span>
+          <span className='text-xs text-[#505060]'>
+            Claude Opus 4.6 · {projectPath?.split('/').pop()}
+          </span>
           <div className='flex items-center gap-3'>
-            {/* Paperclip */}
-            <button className='text-[#666672] hover:text-[#e4e4eb] transition-colors'>
-              <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
-                <path
-                  d='M12 6.5L6.5 12a3.5 3.5 0 01-5-5l5-5a2.5 2.5 0 013.5 3.5L5 10.5a1.5 1.5 0 01-2-2L8 4'
-                  stroke='currentColor'
-                  strokeWidth='1.2'
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                />
-              </svg>
-            </button>
-            {/* Link */}
-            <button className='text-[#666672] hover:text-[#e4e4eb] transition-colors'>
-              <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
-                <path
-                  d='M6 8a3 3 0 004.24 0l1.5-1.5a3 3 0 00-4.24-4.24L6.5 3.5M8 6a3 3 0 00-4.24 0L2.26 7.5A3 3 0 006.5 11.74l1-1'
-                  stroke='currentColor'
-                  strokeWidth='1.2'
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                />
-              </svg>
-            </button>
-            {/* Send */}
             <button
               onClick={() => void handleSend()}
-              disabled={!input.trim() || pipelineStatus === 'running'}
-              className={`transition-colors ${
-                input.trim() && pipelineStatus !== 'running'
-                  ? 'text-[#e4e4eb]'
-                  : 'text-[#505060]'
-              }`}
+              disabled={isRunning || !input.trim()}
+              className='flex items-center gap-1.5 px-3 py-1 bg-[#9333ea] hover:bg-[#7e22ce] disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs transition-colors'
             >
-              <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>
-                <path
-                  d='M2 7l9-5-4 9-1-3.5L2 7z'
-                  stroke='currentColor'
-                  strokeWidth='1.2'
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                />
+              <svg width='12' height='12' viewBox='0 0 12 12' fill='none'>
+                <path d='M2 6l7-4-3 8-1-3-3-1z' stroke='white' strokeWidth='1.2' strokeLinecap='round' strokeLinejoin='round' />
               </svg>
+              Run
             </button>
           </div>
         </div>
       </div>
-
-      {/* Status Bar */}
-      <div className='flex-shrink-0 border-t border-[#2a2a33] px-4 py-1 flex items-center gap-3 bg-[#141418]'>
-        <span className='text-[10px] text-[#505060] font-sans'>p 3002</span>
-        <span className='text-[10px] text-[#505060] font-sans'>Terminal</span>
-        <span className='text-[10px] text-[#505060] font-sans'>ls</span>
-        <span className='text-[10px] text-[#505060] font-sans truncate'>npm run dev -- -p 30...</span>
-      </div>
     </div>
   );
 });
 
-interface ConversationItemRendererProps {
-  item: ConversationItem;
-}
+interface RendererProps { item: ConversationItemType }
 
-const ConversationItemRenderer = React.memo(function ConversationItemRenderer({
-  item,
-}: ConversationItemRendererProps) {
-  if (item.type === 'goal') {
-    return (
-      <div className='rounded border border-[#1e4a1e] bg-[#0c1c0c] px-3 py-2.5'>
-        <p className='text-xs text-[#86efac] leading-relaxed'>{item.content}</p>
-      </div>
-    );
-  }
-
-  if (item.type === 'response') {
-    return <p className='text-xs text-[#c4c4cc] leading-relaxed'>{item.content}</p>;
-  }
-
-  if (item.type === 'timestamp') {
-    return <p className='text-xs text-[#505060]'>{item.label}</p>;
-  }
-
-  if (item.type === 'sub-agent') {
-    return <SubAgentCard item={item} />;
-  }
-
-  return null;
-});
-
-interface SubAgentCardProps {
-  item: SubAgentItem;
-}
-
-const SubAgentCard = React.memo(function SubAgentCard({ item }: SubAgentCardProps) {
-  const isRunning = item.status === 'Running...';
-  const isComplete = item.status === 'Complete';
-
-  return (
-    <div className='rounded border border-[#2a2a33] bg-[#1c1c22] overflow-hidden'>
-      <div className='flex items-center justify-between px-3 py-2'>
-        <div className='flex items-center gap-2'>
-          <div
-            className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              isRunning
-                ? 'bg-[#22c55e] animate-pulse'
-                : isComplete
-                  ? 'bg-[#86efac]'
-                  : 'bg-[#888892]'
-            }`}
-          />
-          <span className='text-xs text-[#e4e4eb]'>{item.name}</span>
+const ConversationItemRenderer = React.memo(function ConversationItemRenderer({ item }: RendererProps) {
+  switch (item.type) {
+    case 'goal':
+      return (
+        <div className='rounded border border-[#1e4a1e] bg-[#0c1c0c] px-3 py-2.5'>
+          <p className='text-sm text-[#4ade80] leading-relaxed'>{item.content}</p>
         </div>
-        <span
-          className={`text-xs ${
-            isRunning ? 'text-[#888892]' : isComplete ? 'text-[#86efac]' : 'text-[#888892]'
-          }`}
-        >
-          {item.status}
-        </span>
-      </div>
-      {item.description && (
-        <p className='px-3 pb-2 text-xs text-[#888892]'>{item.description}</p>
-      )}
-      {item.code && (
-        <div className='mx-3 mb-3 rounded bg-[#111115] border border-[#2a2a33] p-2.5 overflow-hidden'>
-          <pre className='text-[11px] text-[#a6adc8] font-mono leading-relaxed overflow-x-auto'>
-            <code>{item.code}</code>
-          </pre>
+      );
+    case 'response':
+      return <p className='text-sm text-[#c4c4cc] leading-relaxed whitespace-pre-line'>{item.content}</p>;
+    case 'agent-started':
+      return (
+        <div className='flex items-center gap-2 py-0.5'>
+          <div className='w-2 h-2 rounded-full bg-[#22c55e] animate-pulse flex-shrink-0' />
+          <span className='text-xs text-[#888892]'>
+            <span className='text-[#e4e4eb] font-medium'>{item.agentId}</span>
+            {item.taskId !== undefined ? ` — ${item.taskId}` : ' — started'}
+          </span>
         </div>
-      )}
-    </div>
-  );
+      );
+    case 'agent-progress':
+      return (
+        <div className='rounded border border-[#2a2a33] bg-[#1c1c22] overflow-hidden'>
+          <div className='flex items-center gap-2 px-3 py-2 border-b border-[#2a2a33]'>
+            <div className='w-2 h-2 rounded-full bg-[#22c55e] animate-pulse flex-shrink-0' />
+            <span className='text-xs font-medium text-[#e4e4eb]'>{item.agentId}</span>
+            <span className='text-[10px] text-[#888892] ml-auto'>Running...</span>
+          </div>
+          <div className='p-3'>
+            <pre className='text-xs text-[#a6adc8] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap'><code>{item.content}</code></pre>
+          </div>
+        </div>
+      );
+    case 'agent-completed':
+      return (
+        <div className='rounded border border-[#2a2a33] bg-[#1c1c22] overflow-hidden'>
+          <div className='flex items-center justify-between px-3 py-2.5'>
+            <div className='flex items-center gap-2'>
+              <div className='w-2 h-2 rounded-full bg-[#86efac] flex-shrink-0' />
+              <span className='text-xs font-medium text-[#e4e4eb]'>{item.agentId}</span>
+            </div>
+            <span className='text-xs text-[#86efac]'>Complete</span>
+          </div>
+          <p className='px-3 pb-2 text-xs text-[#888892] leading-relaxed'>{item.summary}</p>
+          {item.files.length > 0 && (
+            <div className='px-3 pb-3 flex flex-wrap gap-1'>
+              {item.files.map((f, i) => (
+                <span key={i} className='text-[10px] font-mono text-[#6b8fd4] bg-[#111115] border border-[#2a2a33] px-1.5 py-0.5 rounded'>
+                  {f.split('/').pop()}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    case 'agent-failed':
+      return (
+        <div className='rounded border border-[#4a1e1e] bg-[#1c0c0c] px-3 py-2.5'>
+          <div className='flex items-center gap-2 mb-1'>
+            <div className='w-2 h-2 rounded-full bg-[#ef4444] flex-shrink-0' />
+            <span className='text-xs font-medium text-[#e4e4eb]'>{item.agentId}</span>
+            <span className='text-xs text-[#ef4444] ml-auto'>Failed</span>
+          </div>
+          <p className='text-xs text-[#f87171] leading-relaxed'>{item.error}</p>
+        </div>
+      );
+    case 'verify-pass':
+      return (
+        <div className='rounded border border-[#1e4a1e] bg-[#0c1c0c] px-3 py-2.5'>
+          <div className='flex items-center justify-between mb-1'>
+            <span className='text-xs text-[#4ade80] font-medium'>Verification passed</span>
+            <span className='text-[10px] text-[#22c55e]'>{Math.round(item.coverage * 100)}% coverage</span>
+          </div>
+          <p className='text-xs text-[#86efac] leading-relaxed'>{item.summary}</p>
+        </div>
+      );
+    case 'verify-fail':
+      return (
+        <div className='rounded border border-[#4a3a1e] bg-[#1c150c] px-3 py-2.5 space-y-1'>
+          <span className='text-xs text-[#f59e0b] font-medium'>Issues found — retrying...</span>
+          {item.issues.slice(0, 3).map((issue, i) => (
+            <p key={i} className='text-xs text-[#d97706] leading-relaxed'>• {issue}</p>
+          ))}
+        </div>
+      );
+    case 'pipeline-completed':
+      return (
+        <div className='rounded border border-[#1e4a1e] bg-[#0c1c0c] px-3 py-2.5'>
+          <p className='text-xs text-[#4ade80] font-medium mb-1'>Done</p>
+          <p className='text-xs text-[#86efac] leading-relaxed'>{item.summary}</p>
+        </div>
+      );
+    case 'pipeline-failed':
+      return (
+        <div className='rounded border border-[#4a1e1e] bg-[#1c0c0c] px-3 py-2.5'>
+          <p className='text-xs text-[#ef4444] font-medium mb-1'>Pipeline failed</p>
+          <p className='text-xs text-[#f87171] leading-relaxed'>{item.error}</p>
+        </div>
+      );
+    default:
+      return null;
+  }
 });

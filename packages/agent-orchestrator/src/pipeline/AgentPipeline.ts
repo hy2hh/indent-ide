@@ -15,6 +15,7 @@ export interface PipelineOptions {
   messageBus: MessageBus;
   maxRetries?: number;
   createImplementor: (taskId: string) => ImplementorAgent;
+  onSpecCreated?: (spec: LivingSpec) => void;
 }
 
 export interface PipelineResult {
@@ -57,7 +58,10 @@ export class AgentPipeline {
       // Phase 1: Coordinate
       await this.options.coordinator.execute(spec);
 
-      // Wait for user approval (emitted as event)
+      // Coordinator 완료 후 spec을 외부에 노출 (Approve UI용)
+      this.options.onSpecCreated?.(spec);
+
+      // Wait for user approval — UI에서 agent:approveSpec IPC 호출 시 resolve
       await this.waitForApproval(spec);
 
       spec.startExecution('pipeline');
@@ -117,21 +121,18 @@ export class AgentPipeline {
   }
 
   private async waitForApproval(spec: LivingSpec): Promise<void> {
-    // In MVP: auto-approve after coordinator generates spec
-    // In production: wait for user approval event from UI
+    // Poll for user approval — UI calls spec.approve() via IPC agent:approveSpec
     return new Promise((resolve) => {
-      const checkApproval = () => {
-        if (spec.isApproved()) {
-          resolve();
-          return;
-        }
-        // Auto-approve for MVP
-        spec.approve('auto');
+      if (spec.isApproved()) {
         resolve();
-      };
-
-      // Give 100ms for UI to react
-      setTimeout(checkApproval, 100);
+        return;
+      }
+      const interval = setInterval(() => {
+        if (spec.isApproved()) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 200);
     });
   }
 

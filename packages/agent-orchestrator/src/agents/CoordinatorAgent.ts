@@ -1,4 +1,4 @@
-import type { AgentResult, SpecTask } from '@intent-ide/core';
+import type { AgentResult, SpecTask, StreamChunk } from '@intent-ide/core';
 import { BaseAgent } from './BaseAgent.js';
 import type { BaseAgentOptions } from './BaseAgent.js';
 import type { LivingSpec } from '../spec/LivingSpec.js';
@@ -56,17 +56,34 @@ export class CoordinatorAgent extends BaseAgent {
       });
       this.setProgress(40);
 
-      // Execute CLI
+      // Execute CLI with streaming — publish progress chunks via messageBus
       const cli = this.modelRouter.route('coordinator');
       const flags = this.modelRouter.getFlags('coordinator');
 
-      const streamParser = new StreamParser();
       const stream = cli.stream(prompt.user, { flags, outputFormat: 'stream-json' });
-      const result = await streamParser.collectAll(stream);
+
+      let fullContent = '';
+      for await (const chunk of stream as AsyncIterable<StreamChunk>) {
+        if (chunk.type === 'text' && chunk.content) {
+          fullContent += chunk.content;
+          this.messageBus.publish(
+            'agent:progress',
+            this.createMessage('status', {
+              role: this.role,
+              content: chunk.content,
+              accumulated: fullContent.slice(-500), // 최근 500자
+            })
+          );
+        }
+      }
       this.setProgress(80);
 
-      // Parse coordinator output
-      const output = this.parseCoordinatorOutput(result.jsonBlocks, specData.goal);
+      // Parse coordinator output from accumulated full content
+      const streamParser = new StreamParser();
+      streamParser.process({ type: 'text', content: fullContent });
+      const parsed = streamParser.process({ type: 'done', content: '' });
+
+      const output = this.parseCoordinatorOutput(parsed.jsonBlocks, specData.goal);
 
       // Update Living Spec with tasks
       for (const task of output.tasks) {

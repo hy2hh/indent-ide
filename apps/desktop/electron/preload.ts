@@ -16,6 +16,12 @@ const api = {
       ipcRenderer.invoke('fs:openProject'),
     watchFile: (filePath: string) =>
       ipcRenderer.invoke('fs:watchFile', filePath),
+    getGitChanges: (projectPath: string) =>
+      ipcRenderer.invoke('fs:getGitChanges', projectPath),
+    getFileDiff: (projectPath: string, filePath: string) =>
+      ipcRenderer.invoke('fs:getFileDiff', projectPath, filePath),
+    createPR: (projectPath: string, title: string, body: string) =>
+      ipcRenderer.invoke('fs:createPR', projectPath, title, body),
   },
 
   // Context Engine
