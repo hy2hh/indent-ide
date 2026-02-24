@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ['@intent-ide/core', '@intent-ide/context-engine', '@intent-ide/diff-engine', '@intent-ide/intent-parser', '@intent-ide/llm-orchestrator', '@intent-ide/agent-orchestrator'] })],
     build: {
       rollupOptions: {
         input: {
