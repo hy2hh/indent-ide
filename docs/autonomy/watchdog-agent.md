@@ -4,6 +4,7 @@ This repository uses a two-layer loop:
 
 1. `Worker` executes one concrete change step (`WORK_CMD`)
 2. `Watchdog` verifies quality and blocks bad iterations
+3. Loop script commits and pushes successful iterations by default
 
 ## Responsibilities
 

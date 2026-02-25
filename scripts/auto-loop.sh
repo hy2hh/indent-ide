@@ -13,6 +13,10 @@ JOURNAL_FILE="${JOURNAL_FILE:-$STATE_DIR/loop-journal.log}"
 MAX_ITERS="${MAX_ITERS:-8}"
 MAX_STALE_ITERS="${MAX_STALE_ITERS:-2}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-1}"
+AUTO_COMMIT_PUSH="${AUTO_COMMIT_PUSH:-1}"
+AUTO_COMMIT_MESSAGE_PREFIX="${AUTO_COMMIT_MESSAGE_PREFIX:-chore(loop): iteration}"
+AUTO_PUSH_REMOTE="${AUTO_PUSH_REMOTE:-origin}"
+AUTO_PUSH_BRANCH="${AUTO_PUSH_BRANCH:-}"
 
 if [[ -z "$WORK_CMD" ]]; then
   echo "WORK_CMD is required."
@@ -56,11 +60,54 @@ append_journal() {
   printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$line" >>"$JOURNAL_FILE"
 }
 
-previous_snapshot="$(git status --porcelain)"
+get_repo_snapshot() {
+  local head status
+  head="$(git rev-parse --verify HEAD 2>/dev/null || echo "no-head")"
+  status="$(git status --porcelain)"
+  printf '%s\n%s\n' "$head" "$status"
+}
+
+run_auto_commit_push() {
+  local iteration="$1"
+  local branch="$AUTO_PUSH_BRANCH"
+  local status_before commit_msg head_after
+
+  status_before="$(git status --porcelain)"
+  if [[ -z "$status_before" ]]; then
+    append_journal "iteration=$iteration vcs:skip reason=no_changes"
+    return 0
+  fi
+
+  if [[ -z "$branch" ]]; then
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+  fi
+  if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+    append_journal "iteration=$iteration vcs:failed reason=detached_head"
+    return 1
+  fi
+
+  append_journal "iteration=$iteration vcs:add_all"
+  git add -A
+
+  if [[ -z "$(git status --porcelain)" ]]; then
+    append_journal "iteration=$iteration vcs:skip reason=empty_after_add"
+    return 0
+  fi
+
+  commit_msg="$AUTO_COMMIT_MESSAGE_PREFIX $iteration ($(date -u +"%Y-%m-%dT%H:%M:%SZ"))"
+  append_journal "iteration=$iteration vcs:commit message=\"$commit_msg\""
+  git commit -m "$commit_msg"
+
+  head_after="$(git rev-parse --short HEAD)"
+  append_journal "iteration=$iteration vcs:push remote=$AUTO_PUSH_REMOTE branch=$branch head=$head_after"
+  git push "$AUTO_PUSH_REMOTE" "$branch"
+}
+
+previous_snapshot="$(get_repo_snapshot)"
 stale_iters=0
 
 write_state "running" 0 0 "loop initialized"
-append_journal "loop initialized; max_iters=$MAX_ITERS max_stale_iters=$MAX_STALE_ITERS"
+append_journal "loop initialized; max_iters=$MAX_ITERS max_stale_iters=$MAX_STALE_ITERS auto_commit_push=$AUTO_COMMIT_PUSH"
 
 for ((i=1; i<=MAX_ITERS; i++)); do
   write_state "running" "$i" "$stale_iters" "iteration $i started"
@@ -91,7 +138,17 @@ for ((i=1; i<=MAX_ITERS; i++)); do
     append_journal "iteration=$i reviewer:passed"
   fi
 
-  current_snapshot="$(git status --porcelain)"
+  if [[ "$AUTO_COMMIT_PUSH" == "1" ]]; then
+    append_journal "iteration=$i vcs:start auto_commit_push=1"
+    if ! run_auto_commit_push "$i"; then
+      write_state "failed" "$i" "$stale_iters" "auto commit/push failed"
+      append_journal "iteration=$i vcs:failed"
+      exit 1
+    fi
+    append_journal "iteration=$i vcs:passed"
+  fi
+
+  current_snapshot="$(get_repo_snapshot)"
   if [[ "$current_snapshot" == "$previous_snapshot" ]]; then
     stale_iters=$((stale_iters + 1))
     append_journal "iteration=$i change=none stale_iters=$stale_iters"
@@ -114,4 +171,3 @@ done
 
 write_state "completed" "$MAX_ITERS" "$stale_iters" "reached max iterations"
 append_journal "loop completed; reason=max_iters"
-
