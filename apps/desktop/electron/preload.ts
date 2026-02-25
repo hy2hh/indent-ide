@@ -20,6 +20,8 @@ const api = {
       ipcRenderer.invoke('fs:readDir', dirPath),
     openProject: () =>
       ipcRenderer.invoke('fs:openProject'),
+    createProject: () =>
+      ipcRenderer.invoke('fs:createProject'),
     openExternal: (url: string) =>
       ipcRenderer.invoke('fs:openExternal', url),
     watchFile: (filePath: string) =>

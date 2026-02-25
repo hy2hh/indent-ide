@@ -3,7 +3,7 @@ import { useProjectStore } from '../../stores/projectStore.js';
 import { useAgentStore } from '../../stores/agentStore.js';
 
 export const WelcomeScreen = React.memo(function WelcomeScreen() {
-  const { openProject } = useProjectStore();
+  const { openProject, createProject } = useProjectStore();
   const { detectedCLIs } = useAgentStore();
 
   const availableCLIs = Object.entries(detectedCLIs)
@@ -13,6 +13,10 @@ export const WelcomeScreen = React.memo(function WelcomeScreen() {
   const handleOpen = useCallback(async () => {
     await openProject();
   }, [openProject]);
+
+  const handleCreate = useCallback(async () => {
+    await createProject();
+  }, [createProject]);
 
   return (
     <div className='flex-1 flex flex-col items-center justify-center gap-8 bg-[#18181c]'>
@@ -32,16 +36,28 @@ export const WelcomeScreen = React.memo(function WelcomeScreen() {
         </p>
       </div>
 
-      {/* Open Project Button */}
-      <button
-        onClick={() => void handleOpen()}
-        className='flex items-center gap-3 px-6 py-3 bg-[#9333ea] hover:bg-[#7e22ce] text-white rounded-lg text-sm font-medium transition-colors'
-      >
-        <svg width='16' height='16' viewBox='0 0 16 16' fill='none'>
-          <path d='M2 4h5l2 2h5v8H2V4z' stroke='white' strokeWidth='1.2' strokeLinecap='round' strokeLinejoin='round' />
-        </svg>
-        Open Project
-      </button>
+      {/* Project Actions */}
+      <div className='flex items-center gap-3'>
+        <button
+          onClick={() => void handleOpen()}
+          className='flex items-center gap-3 px-[30px] py-[18px] bg-[#9333ea] hover:bg-[#7e22ce] text-white rounded-lg text-sm font-medium transition-colors'
+        >
+          <svg width='16' height='16' viewBox='0 0 16 16' fill='none'>
+            <path d='M2 4h5l2 2h5v8H2V4z' stroke='white' strokeWidth='1.2' strokeLinecap='round' strokeLinejoin='round' />
+          </svg>
+          Open Project
+        </button>
+
+        <button
+          onClick={() => void handleCreate()}
+          className='flex items-center gap-2 px-6 py-3 bg-[#1f1f27] border border-[#2f2f3a] hover:bg-[#2a2a35] text-[#e4e4eb] rounded-lg text-sm font-medium transition-colors'
+        >
+          <svg width='16' height='16' viewBox='0 0 16 16' fill='none'>
+            <path d='M8 3v10M3 8h10' stroke='currentColor' strokeWidth='1.3' strokeLinecap='round' />
+          </svg>
+          New Project
+        </button>
+      </div>
 
       {/* CLI Status */}
       <div className='flex items-center gap-4'>

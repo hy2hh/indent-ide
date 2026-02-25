@@ -8,6 +8,7 @@ interface ProjectState {
   indexProgress: number;
   indexStats: { total: number; indexed: number; stale: number } | null;
   openProject: () => Promise<void>;
+  createProject: () => Promise<void>;
   refreshFileTree: () => Promise<void>;
   indexProject: () => Promise<void>;
   setIndexProgress: (progress: number) => void;
@@ -22,6 +23,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   openProject: async () => {
     const path = await window.intentIde.fs.openProject();
+    if (!path) {
+      return;
+    }
+    set({ projectPath: path });
+    await get().refreshFileTree();
+
+    // Subscribe to index progress
+    window.intentIde.context.onIndexProgress((progress) => {
+      get().setIndexProgress(progress);
+    });
+  },
+
+  createProject: async () => {
+    const path = await window.intentIde.fs.createProject();
     if (!path) {
       return;
     }

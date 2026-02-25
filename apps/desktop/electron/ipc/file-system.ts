@@ -1,7 +1,7 @@
 import type { IpcMain } from 'electron';
 import { BrowserWindow, dialog, shell } from 'electron';
 import { readFile, writeFile, readdir, stat, mkdir, unlink, rename } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { FileTreeNode } from '@intent-ide/core';
@@ -56,6 +56,34 @@ export function setupFileSystemIpc(ipcMain: IpcMain): void {
     }
 
     return result.filePaths[0];
+  });
+
+  ipcMain.handle('fs:createProject', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return null;
+    }
+
+    const result = await dialog.showSaveDialog(win, {
+      title: 'New Project',
+      buttonLabel: 'Create Project',
+      nameFieldLabel: 'Project Name',
+      defaultPath: 'untitled-project',
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    const projectPath = result.filePath;
+    await mkdir(projectPath, { recursive: true });
+
+    const readmePath = join(projectPath, 'README.md');
+    const readmeContent = `# ${basename(projectPath)}\n\nCreated with Intent IDE.\n`;
+    await writeFile(readmePath, readmeContent, 'utf-8').catch(() => undefined);
+
+    return projectPath;
   });
 
   ipcMain.handle('fs:openExternal', async (_, url: string) => {
