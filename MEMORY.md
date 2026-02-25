@@ -89,3 +89,4 @@ This repository builds **Intent IDE**, a macOS desktop IDE where multiple AI age
   - execution error messages now include failed operation target (file/patch) when available
 - Edit management (history diff preview):
   - history panel now shows per-operation patch preview snippets for selected history items
+  - history panel supports query-based filtering and context-line toggle for preview snippets

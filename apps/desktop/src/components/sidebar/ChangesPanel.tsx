@@ -112,6 +112,8 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
     id: string;
     source: 'undo' | 'redo';
   } | null>(null);
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyPreviewIncludeContext, setHistoryPreviewIncludeContext] = useState(false);
 
   // git diff로 변경 파일 목록 로드
   const loadChanges = useCallback(async () => {
@@ -224,20 +226,29 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
   const canApplySelectionActions = hasBatchSelections || (!!selectedHunk && selectedHunkChangeCount > 0);
   const undoHistoryPreview = [...editHistory].reverse();
   const redoHistoryPreview = [...redoHistory].reverse();
+  const historySearchQueryNormalized = historySearchQuery.trim().toLowerCase();
+  const visibleUndoHistoryPreview = historySearchQueryNormalized.length > 0
+    ? undoHistoryPreview.filter((item) => item.description.toLowerCase().includes(historySearchQueryNormalized))
+    : undoHistoryPreview;
+  const visibleRedoHistoryPreview = historySearchQueryNormalized.length > 0
+    ? redoHistoryPreview.filter((item) => item.description.toLowerCase().includes(historySearchQueryNormalized))
+    : redoHistoryPreview;
+  const undoStepById = new Map(undoHistoryPreview.map((item, index) => [item.id, index + 1]));
+  const redoStepById = new Map(redoHistoryPreview.map((item, index) => [item.id, index + 1]));
   const selectedUndoPreviewItem = historyPreviewSelection?.source === 'undo'
-    ? undoHistoryPreview.find((item) => item.id === historyPreviewSelection.id) ?? null
+    ? visibleUndoHistoryPreview.find((item) => item.id === historyPreviewSelection.id) ?? null
     : null;
   const selectedRedoPreviewItem = historyPreviewSelection?.source === 'redo'
-    ? redoHistoryPreview.find((item) => item.id === historyPreviewSelection.id) ?? null
+    ? visibleRedoHistoryPreview.find((item) => item.id === historyPreviewSelection.id) ?? null
     : null;
   const activeHistoryPreview = selectedUndoPreviewItem
     ? { source: 'undo' as const, item: selectedUndoPreviewItem }
     : selectedRedoPreviewItem
       ? { source: 'redo' as const, item: selectedRedoPreviewItem }
-      : undoHistoryPreview[0]
-        ? { source: 'undo' as const, item: undoHistoryPreview[0] }
-        : redoHistoryPreview[0]
-          ? { source: 'redo' as const, item: redoHistoryPreview[0] }
+      : visibleUndoHistoryPreview[0]
+        ? { source: 'undo' as const, item: visibleUndoHistoryPreview[0] }
+        : visibleRedoHistoryPreview[0]
+          ? { source: 'redo' as const, item: visibleRedoHistoryPreview[0] }
           : null;
 
   const executeEditOperation = useCallback(async (operation: EditOperation): Promise<EditExecutionResult> => {
@@ -943,6 +954,8 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
       setEditHistory([]);
       setRedoHistory([]);
       setHistoryPreviewSelection(null);
+      setHistorySearchQuery('');
+      setHistoryPreviewIncludeContext(false);
       return;
     }
 
@@ -950,6 +963,8 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
     setEditHistory(persistedHistory.editHistory);
     setRedoHistory(persistedHistory.redoHistory);
     setHistoryPreviewSelection(null);
+    setHistorySearchQuery('');
+    setHistoryPreviewIncludeContext(false);
   }, [projectPath]);
 
   useEffect(() => {
@@ -1333,19 +1348,36 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
                 Clear
               </button>
             </div>
+            <div className='flex items-center gap-2'>
+              <input
+                value={historySearchQuery}
+                onChange={(event) => setHistorySearchQuery(event.target.value)}
+                placeholder='Search history...'
+                className='flex-1 bg-[#111115] border border-[#2a2a33] rounded px-2 py-1 text-[10px] text-[#c4c4cc] placeholder-[#666672] focus:outline-none focus:border-[#3a3a45]'
+              />
+              <label className='flex items-center gap-1 text-[10px] text-[#a3a3a3]'>
+                <input
+                  type='checkbox'
+                  checked={historyPreviewIncludeContext}
+                  onChange={(event) => setHistoryPreviewIncludeContext(event.target.checked)}
+                  className='h-3 w-3 rounded border border-[#3a3a45] bg-[#111115] accent-[#6b8fd4]'
+                />
+                Context
+              </label>
+            </div>
             <div className='grid grid-cols-2 gap-2'>
               <div className='rounded border border-[#2a2a33] bg-[#111115]'>
                 <p className='px-2 py-1 text-[10px] text-[#93c5fd] border-b border-[#2a2a33]'>
                   Undo Stack ({editHistory.length})
                 </p>
                 <div className='max-h-24 overflow-y-auto'>
-                  {undoHistoryPreview.length === 0 ? (
+                  {visibleUndoHistoryPreview.length === 0 ? (
                     <p className='px-2 py-1 text-[10px] text-[#666672]'>No undo actions.</p>
                   ) : (
-                    undoHistoryPreview.map((item, index) => (
+                    visibleUndoHistoryPreview.map((item, index) => (
                       <button
                         key={`undo-${item.id}`}
-                        onClick={() => void handleUndoSteps(index + 1)}
+                        onClick={() => void handleUndoSteps(undoStepById.get(item.id) ?? (index + 1))}
                         onMouseEnter={() => setHistoryPreviewSelection({ id: item.id, source: 'undo' })}
                         disabled={isApplyingEditAction}
                         className={`w-full px-2 py-1 text-[10px] text-left text-[#c4c4cc] hover:bg-[#1a1a20] disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
@@ -1367,13 +1399,13 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
                   Redo Stack ({redoHistory.length})
                 </p>
                 <div className='max-h-24 overflow-y-auto'>
-                  {redoHistoryPreview.length === 0 ? (
+                  {visibleRedoHistoryPreview.length === 0 ? (
                     <p className='px-2 py-1 text-[10px] text-[#666672]'>No redo actions.</p>
                   ) : (
-                    redoHistoryPreview.map((item, index) => (
+                    visibleRedoHistoryPreview.map((item, index) => (
                       <button
                         key={`redo-${item.id}`}
-                        onClick={() => void handleRedoSteps(index + 1)}
+                        onClick={() => void handleRedoSteps(redoStepById.get(item.id) ?? (index + 1))}
                         onMouseEnter={() => setHistoryPreviewSelection({ id: item.id, source: 'redo' })}
                         disabled={isApplyingEditAction}
                         className={`w-full px-2 py-1 text-[10px] text-left text-[#c4c4cc] hover:bg-[#1a1a20] disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
@@ -1406,7 +1438,7 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
                       <p className='text-[10px] text-[#666672]'>No forward operations in this history item.</p>
                     ) : (
                       activeHistoryPreview.item.redo.map((operation, index) => {
-                        const preview = getEditOperationPreview(operation);
+                        const preview = getEditOperationPreview(operation, historyPreviewIncludeContext);
                         return (
                           <div key={`${activeHistoryPreview.item.id}-op-${index}`} className='rounded border border-[#2a2a33] bg-[#15151a] px-2 py-1'>
                             <p className='text-[10px] text-[#c4c4cc]'>
@@ -1769,14 +1801,18 @@ function buildEditExecutionErrorMessage(result: EditExecutionResult, fallback: s
     : withOperation;
 }
 
-function extractPatchPreviewLines(patch: string, maxLines = 6): string[] {
+function extractPatchPreviewLines(patch: string, maxLines = 6, includeContext = false): string[] {
   const lines = patch.split('\n');
   const preview: string[] = [];
+  let inHunk = false;
 
   for (const line of lines) {
-    if (line.startsWith('@@')
-      || (line.startsWith('+') && !line.startsWith('+++'))
-      || (line.startsWith('-') && !line.startsWith('---'))) {
+    if (line.startsWith('@@')) {
+      inHunk = true;
+      preview.push(line);
+    } else if ((line.startsWith('+') && !line.startsWith('+++'))
+      || (line.startsWith('-') && !line.startsWith('---'))
+      || (includeContext && inHunk && line.startsWith(' '))) {
       preview.push(line);
     }
 
@@ -1788,7 +1824,10 @@ function extractPatchPreviewLines(patch: string, maxLines = 6): string[] {
   return preview;
 }
 
-function getEditOperationPreview(operation: EditOperation): { label: string; lines: string[] } {
+function getEditOperationPreview(
+  operation: EditOperation,
+  includeContext = false,
+): { label: string; lines: string[] } {
   switch (operation.kind) {
     case 'stage-file':
     case 'unstage-file':
@@ -1805,7 +1844,7 @@ function getEditOperationPreview(operation: EditOperation): { label: string; lin
       const label = path ? `${operation.kind} ${path}` : operation.kind;
       return {
         label,
-        lines: extractPatchPreviewLines(operation.patch),
+        lines: extractPatchPreviewLines(operation.patch, 6, includeContext),
       };
     }
     default:

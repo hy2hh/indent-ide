@@ -120,9 +120,10 @@ Augment Intent 최신 공개 기능(`v0.2.x`)을 기준으로, Intent IDE의 기
   - 히스토리 패널에서 스택 항목 탐색 및 N-step undo/redo 실행
   - 실패 시 연산 대상(파일/패치) 포함 상세 에러 메시지
   - 히스토리 패널에서 항목별 patch diff preview 표시
+  - 히스토리 검색 및 context 포함 preview 토글
   - 파일 리스트에 staged 배지 표시
 - 향후 확장
-  - 히스토리 diff preview context 토글 + 검색
+  - 히스토리 preview 라인 확장/축소 및 고정 비교
 
 ## 수용 기준 (Acceptance Criteria)
 
@@ -141,4 +142,4 @@ Augment Intent 최신 공개 기능(`v0.2.x`)을 기준으로, Intent IDE의 기
 | Checkpoint/restore (quick) | ✅ | Save + Restore Latest |
 | Checkpoint list/restore/delete | ✅ | 리스트 표시 + 선택 복원 + 삭제 |
 | Checkpoint rename + preview diff | ✅ | 인라인 rename + 복원 전 상세 비교 |
-| Edit-management UX | ◑ | 파일/multi-file/selection stage-revert + drag range + multi-hunk batch + undo/redo + history 영속화 + 실패 롤백 + 히스토리 탐색/재적용 + 상세 에러 + diff preview 완료, context 토글/검색은 미완 |
+| Edit-management UX | ◑ | 파일/multi-file/selection stage-revert + drag range + multi-hunk batch + undo/redo + history 영속화 + 실패 롤백 + 히스토리 탐색/재적용 + 상세 에러 + diff preview + context 토글/검색 완료, preview 상호작용 고도화는 미완 |
