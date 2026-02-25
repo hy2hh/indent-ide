@@ -1,12 +1,14 @@
 import type { IpcMain, BrowserWindow } from 'electron';
-import { dialog } from 'electron';
-import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
+import { dialog, shell } from 'electron';
+import { readFile, writeFile, readdir, stat, mkdir, unlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import type { FileTreeNode } from '@intent-ide/core';
 import { simpleGit } from 'simple-git';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export function setupFileSystemIpc(ipcMain: IpcMain): void {
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
@@ -16,6 +18,21 @@ export function setupFileSystemIpc(ipcMain: IpcMain): void {
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
     await writeFile(filePath, content, 'utf-8');
+    return true;
+  });
+
+  ipcMain.handle('fs:deleteFile', async (_, filePath: string) => {
+    await unlink(filePath);
+    return true;
+  });
+
+  ipcMain.handle('fs:renameFile', async (_, fromPath: string, toPath: string) => {
+    await rename(fromPath, toPath);
+    return true;
+  });
+
+  ipcMain.handle('fs:ensureDir', async (_, dirPath: string) => {
+    await mkdir(dirPath, { recursive: true });
     return true;
   });
 
@@ -41,31 +58,48 @@ export function setupFileSystemIpc(ipcMain: IpcMain): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle('fs:openExternal', async (_, url: string) => {
+    await shell.openExternal(url);
+    return true;
+  });
+
   // git 변경 파일 목록
   ipcMain.handle('fs:getGitChanges', async (_, projectPath: string) => {
     try {
       const git = simpleGit(projectPath);
       const status = await git.status();
-      const files = [
-        ...status.modified.map(f => ({ path: f, status: 'modified' as const, additions: 0, deletions: 0 })),
-        ...status.created.map(f => ({ path: f, status: 'added' as const, additions: 0, deletions: 0 })),
-        ...status.deleted.map(f => ({ path: f, status: 'deleted' as const, additions: 0, deletions: 0 })),
-        ...status.not_added.map(f => ({ path: f, status: 'added' as const, additions: 0, deletions: 0 })),
-      ];
+      const files = status.files.map((file) => {
+        const stateCode = file.working_dir.trim() ? file.working_dir : file.index;
+        const normalizedStatus =
+          stateCode === 'A' || stateCode === '?'
+            ? 'added'
+            : stateCode === 'D'
+              ? 'deleted'
+              : 'modified';
+        const staged = file.index !== ' ' && file.index !== '?' && file.index !== '!';
+        return {
+          path: file.path,
+          status: normalizedStatus as 'added' | 'modified' | 'deleted',
+          staged,
+          additions: 0,
+          deletions: 0,
+        };
+      });
+      const uniqueFiles = Array.from(new Map(files.map((file) => [file.path, file])).values());
       // diff --stat으로 추가/삭제 줄 수 계산
       const diffStat = await git.diff(['--stat', 'HEAD']).catch(() => '');
       for (const line of diffStat.split('\n')) {
         const match = line.match(/^\s*(.+?)\s+\|\s+\d+\s+([+]+)?(-+)?/);
         if (match) {
           const filePath = match[1]?.trim() ?? '';
-          const file = files.find(f => f.path.endsWith(filePath) || filePath.endsWith(f.path));
+          const file = uniqueFiles.find((item) => item.path.endsWith(filePath) || filePath.endsWith(item.path));
           if (file) {
             file.additions = (match[2]?.length ?? 0);
             file.deletions = (match[3]?.length ?? 0);
           }
         }
       }
-      return files;
+      return uniqueFiles;
     } catch {
       return [];
     }
@@ -76,7 +110,9 @@ export function setupFileSystemIpc(ipcMain: IpcMain): void {
     try {
       const git = simpleGit(projectPath);
       const diff = await git.diff(['HEAD', '--', filePath]).catch(() => '');
-      if (diff) return diff;
+      if (diff) {
+        return diff;
+      }
       // 스테이지되지 않은 새 파일
       const untracked = await git.diff(['--', filePath]).catch(() => '');
       return untracked;
@@ -85,19 +121,154 @@ export function setupFileSystemIpc(ipcMain: IpcMain): void {
     }
   });
 
+  ipcMain.handle('fs:stageFile', async (_, projectPath: string, filePath: string) => {
+    try {
+      const git = simpleGit(projectPath);
+      await git.add([filePath]);
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:unstageFile', async (_, projectPath: string, filePath: string) => {
+    try {
+      const git = simpleGit(projectPath);
+      await git.reset(['HEAD', '--', filePath]);
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:discardFileChanges', async (_, projectPath: string, filePath: string) => {
+    try {
+      const git = simpleGit(projectPath);
+      try {
+        await git.raw(['restore', '--staged', '--worktree', '--', filePath]);
+      } catch {
+        const absolutePath = join(projectPath, filePath);
+        await unlink(absolutePath).catch(() => undefined);
+        await git.reset(['HEAD', '--', filePath]).catch(() => undefined);
+      }
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:stageHunk', async (_, projectPath: string, patch: string) => {
+    if (!patch || !patch.trim()) {
+      return { success: false, error: 'Patch content is required.' };
+    }
+
+    try {
+      const git = simpleGit(projectPath);
+      await withTempPatchFile(patch, async (patchFilePath) => {
+        await git.raw(['apply', '--cached', '--recount', '--whitespace=nowarn', '--unidiff-zero', patchFilePath]);
+      });
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:unstageHunk', async (_, projectPath: string, patch: string) => {
+    if (!patch || !patch.trim()) {
+      return { success: false, error: 'Patch content is required.' };
+    }
+
+    try {
+      const git = simpleGit(projectPath);
+      await withTempPatchFile(patch, async (patchFilePath) => {
+        await git.raw(['apply', '--cached', '--reverse', '--recount', '--whitespace=nowarn', '--unidiff-zero', patchFilePath]);
+      });
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:applyHunk', async (_, projectPath: string, patch: string) => {
+    if (!patch || !patch.trim()) {
+      return { success: false, error: 'Patch content is required.' };
+    }
+
+    try {
+      const git = simpleGit(projectPath);
+      await withTempPatchFile(patch, async (patchFilePath) => {
+        await git.raw(['apply', '--recount', '--whitespace=nowarn', '--unidiff-zero', patchFilePath]);
+      });
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
+  ipcMain.handle('fs:discardHunk', async (_, projectPath: string, patch: string) => {
+    if (!patch || !patch.trim()) {
+      return { success: false, error: 'Patch content is required.' };
+    }
+
+    try {
+      const git = simpleGit(projectPath);
+      await withTempPatchFile(patch, async (patchFilePath) => {
+        await git.raw(['apply', '--reverse', '--recount', '--whitespace=nowarn', '--unidiff-zero', patchFilePath]);
+      });
+      return { success: true };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return { success: false, error };
+    }
+  });
+
   // PR 생성 (gh CLI 연동)
   ipcMain.handle('fs:createPR', async (_, projectPath: string, title: string, body: string) => {
     try {
-      const { stdout } = await execAsync(
-        `gh pr create --title ${JSON.stringify(title)} --body ${JSON.stringify(body)} --head HEAD`,
+      const git = simpleGit(projectPath);
+      const branch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+
+      if (!branch || branch === 'HEAD') {
+        return { success: false, error: 'Unable to determine current branch. Commit changes on a branch first.' };
+      }
+
+      const { stdout } = await execFileAsync(
+        'gh',
+        ['pr', 'create', '--title', title, '--body', body, '--head', branch],
         { cwd: projectPath }
       );
-      return { success: true, url: stdout.trim() };
+      const urlMatch = stdout.match(/https?:\/\/\S+/);
+      const url = urlMatch?.[0] ?? stdout.trim();
+      return { success: true, url };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const error = err as Error & { code?: string; stderr?: string };
+      if (error.code === 'ENOENT') {
+        return { success: false, error: 'gh CLI not found. Install GitHub CLI and run `gh auth login`.' };
+      }
+      const stderr = error.stderr?.trim();
+      const msg = stderr || error.message || String(err);
       return { success: false, error: msg };
     }
   });
+}
+
+async function withTempPatchFile(
+  patch: string,
+  fn: (patchFilePath: string) => Promise<void>,
+): Promise<void> {
+  const patchFilePath = join(tmpdir(), `intent-ide-${randomUUID()}.patch`);
+  await writeFile(patchFilePath, patch, 'utf-8');
+  try {
+    await fn(patchFilePath);
+  } finally {
+    await unlink(patchFilePath).catch(() => undefined);
+  }
 }
 
 async function buildFileTree(

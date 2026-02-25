@@ -1,6 +1,6 @@
 # Intent IDE — 기능 명세 인덱스
 
-레퍼런스: Augment Code Intent (v0.2.8, 2026-02-22 기준)
+레퍼런스: Augment Code Intent (v0.2.x, 2026-02-25 조사 기준)
 
 ## 파일 목록
 
@@ -14,6 +14,7 @@
 | [06-changes-tab.md](./06-changes-tab.md) | diff 뷰, PR 생성, 스테이징, 병합 |
 | [07-terminal.md](./07-terminal.md) | 내장 터미널, 단축키, 에이전트 명령 실행 |
 | [08-implementation-status.md](./08-implementation-status.md) | 현재 구현 현황 및 우선순위 |
+| [09-intent-parity-technical-spec.md](./09-intent-parity-technical-spec.md) | 레퍼런스 리서치 기반 패리티 기술 스펙 |
 
 ## 핵심 패러다임
 

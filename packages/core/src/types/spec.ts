@@ -20,6 +20,14 @@ export interface SpecTask {
   completedAt?: number;
 }
 
+export interface DraftSpecTaskInput {
+  id?: string;
+  description: string;
+  priority?: TaskPriority;
+  dependencies?: string[];
+  files?: string[];
+}
+
 export interface SpecConstraint {
   type: 'convention' | 'dependency' | 'compatibility' | 'performance';
   description: string;

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type {
+  DraftSpecTaskInput,
   LivingSpecData,
   SpecTask,
   SpecUpdateEvent,
@@ -122,6 +123,52 @@ export class LivingSpec extends EventEmitter {
       () => { task.files = files; },
       { taskId, field: 'files', previousValue: prev, newValue: files, updatedBy }
     );
+  }
+
+  setDraftTasks(tasks: DraftSpecTaskInput[], updatedBy: string): boolean {
+    if (this.data.status !== 'draft') {
+      return false;
+    }
+
+    const prev = this.data.tasks;
+    const idUsage = new Map<string, number>();
+
+    const normalized = tasks
+      .map((task, index): SpecTask | null => {
+        const description = task.description.trim();
+        if (!description) {
+          return null;
+        }
+
+        const candidateId = task.id?.trim() || `task-${index + 1}`;
+        const useCount = (idUsage.get(candidateId) ?? 0) + 1;
+        idUsage.set(candidateId, useCount);
+        const resolvedId = useCount === 1 ? candidateId : `${candidateId}-${useCount}`;
+
+        const dependencies = [...new Set(task.dependencies ?? [])].filter((dep) => dep !== resolvedId);
+        const files = [...new Set(task.files ?? [])];
+
+        return {
+          id: resolvedId,
+          description,
+          status: 'pending',
+          priority: task.priority ?? 'medium',
+          dependencies,
+          files,
+          discoveries: [],
+          feedback: [],
+        };
+      })
+      .filter((task): task is SpecTask => task !== null);
+
+    this.update(
+      () => {
+        this.data.tasks = normalized;
+      },
+      { field: 'tasks', previousValue: prev, newValue: normalized, updatedBy }
+    );
+
+    return true;
   }
 
   approve(updatedBy: string): void {

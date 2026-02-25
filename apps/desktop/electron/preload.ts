@@ -10,16 +10,38 @@ const api = {
       ipcRenderer.invoke('fs:readFile', filePath),
     writeFile: (filePath: string, content: string) =>
       ipcRenderer.invoke('fs:writeFile', filePath, content),
+    deleteFile: (filePath: string) =>
+      ipcRenderer.invoke('fs:deleteFile', filePath),
+    renameFile: (fromPath: string, toPath: string) =>
+      ipcRenderer.invoke('fs:renameFile', fromPath, toPath),
+    ensureDir: (dirPath: string) =>
+      ipcRenderer.invoke('fs:ensureDir', dirPath),
     readDir: (dirPath: string) =>
       ipcRenderer.invoke('fs:readDir', dirPath),
     openProject: () =>
       ipcRenderer.invoke('fs:openProject'),
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('fs:openExternal', url),
     watchFile: (filePath: string) =>
       ipcRenderer.invoke('fs:watchFile', filePath),
     getGitChanges: (projectPath: string) =>
       ipcRenderer.invoke('fs:getGitChanges', projectPath),
     getFileDiff: (projectPath: string, filePath: string) =>
       ipcRenderer.invoke('fs:getFileDiff', projectPath, filePath),
+    stageFile: (projectPath: string, filePath: string) =>
+      ipcRenderer.invoke('fs:stageFile', projectPath, filePath),
+    unstageFile: (projectPath: string, filePath: string) =>
+      ipcRenderer.invoke('fs:unstageFile', projectPath, filePath),
+    discardFileChanges: (projectPath: string, filePath: string) =>
+      ipcRenderer.invoke('fs:discardFileChanges', projectPath, filePath),
+    stageHunk: (projectPath: string, patch: string) =>
+      ipcRenderer.invoke('fs:stageHunk', projectPath, patch),
+    unstageHunk: (projectPath: string, patch: string) =>
+      ipcRenderer.invoke('fs:unstageHunk', projectPath, patch),
+    applyHunk: (projectPath: string, patch: string) =>
+      ipcRenderer.invoke('fs:applyHunk', projectPath, patch),
+    discardHunk: (projectPath: string, patch: string) =>
+      ipcRenderer.invoke('fs:discardHunk', projectPath, patch),
     createPR: (projectPath: string, title: string, body: string) =>
       ipcRenderer.invoke('fs:createPR', projectPath, title, body),
   },
@@ -45,6 +67,8 @@ const api = {
       ipcRenderer.invoke('agent:cancelPipeline', sessionId),
     approveSpec: (specId: string) =>
       ipcRenderer.invoke('agent:approveSpec', specId),
+    updateSpecDraft: (payload: { tasks: unknown[] }) =>
+      ipcRenderer.invoke('agent:updateSpecDraft', payload),
     updateModelProfile: (role: string, profile: unknown) =>
       ipcRenderer.invoke('agent:updateModelProfile', role, profile),
     getDetectedCLIs: () =>

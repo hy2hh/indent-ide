@@ -35,7 +35,7 @@
 - 파이프라인 완료/실패 시: "+ New session" 버튼
 
 ### Changes 탭 → [06-changes-tab.md](./06-changes-tab.md)
-### Files 탭 → TODO
+### Files 탭 → [File Explorer] (기본 구현)
 
 ## Spec Panel (우측, 380px)
 
@@ -49,6 +49,6 @@
 | 3패널 레이아웃 | ✓ |
 | Welcome → 3패널 전환 | ✓ |
 | Agent Sidebar Agents 탭 | ✓ |
-| Changes 탭 | ❌ stub |
-| Files 탭 | ❌ stub |
+| Changes 탭 | ✓ (기본 구현) |
+| Files 탭 | ✓ (기본 구현) |
 | ⌘K 커맨드 팔레트 | ❌ |

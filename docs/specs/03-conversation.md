@@ -8,7 +8,7 @@
 
 - 탭마다 색상 점 (상태 표시)
 - Coordinator 탭 (기본), 에이전트별 탭, git 커밋 탭
-- **현재**: Coordinator 고정 탭만 존재 → TODO: 에이전트별 탭 동적 생성
+- **현재**: Coordinator + 에이전트별 동적 탭 생성 (기본 구현)
 
 ## 대화 아이템 타입 & 표시 방식
 
@@ -17,7 +17,7 @@
 | `goal` | 초록 배경 박스 (`#0c1c0c` border `#1e4a1e`) | ✓ |
 | `response` | 일반 텍스트 (`#c4c4cc`) | ✓ |
 | `agent-started` | 🟢 pulse + "agentId — taskId" | ✓ |
-| `agent-progress` | 코드 스니펫 카드 (스트리밍) | ✓ (단 실제 스트리밍 미구현) |
+| `agent-progress` | 코드 스니펫 카드 (stream chunk 기반) | ✓ |
 | `agent-completed` | 요약 + 파일 배지 (파란 mono) | ✓ |
 | `agent-failed` | 빨간 테두리 카드 | ✓ |
 | `verify-pass` | 초록 박스 + coverage % | ✓ |
@@ -30,18 +30,22 @@
 - **위치**: 패널 하단
 - **형태**: textarea (여러 줄)
 - **전송**: `⌘↵` 또는 Run 버튼
-- **비활성화**: 파이프라인 실행 중 (`disabled`)
+- **실행 중 동작**: Run 버튼이 Queue 모드로 전환
 - **플레이스홀더**: 상태별로 다름
   - idle: "Describe what you want to build or change..."
-  - running: "Agent is working..."
+  - running: "Agent is working... Add another goal to queue."
 - **Stop 버튼**: 실행 중일 때 breadcrumb 우측에 표시
+- **목표 큐**: 실행 중 입력한 goal을 순차 큐잉, 현재 run 종료 후 자동 실행
 
-## @ 멘션 (TODO — 우선순위 높음)
+## @ 멘션
 
 레퍼런스: `@` 입력 시 드롭다운
-- `@에이전트명` → 특정 에이전트에게 작업 직접 위임
-- `@파일경로` → 파일을 컨텍스트로 첨부 (퍼지 검색)
-- `@터미널세션` → 터미널 출력을 컨텍스트로 참조
+- 현재 구현:
+  - `@에이전트명`/`@파일경로` 기본 자동완성 드롭다운
+  - 선택 시 입력창에 멘션 토큰 삽입
+- 다음 단계:
+  - 에이전트 직접 위임 semantics
+  - 터미널 세션/심볼 단위 멘션
 
 ## 스트리밍 (TODO — 우선순위 높음)
 
@@ -62,7 +66,8 @@
 | 빈 상태 안내 | ✓ |
 | 입력 → 파이프라인 실행 | ✓ |
 | Stop 버튼 | ✓ |
-| 실제 스트리밍 | ❌ |
-| @ 멘션 | ❌ |
-| 에이전트별 탭 | ❌ |
+| 목표 큐(실행 중 follow-up) | ✓ |
+| stream chunk 표시 | ✓ |
+| @ 멘션 (기본) | ✓ |
+| 에이전트별 탭 | ✓ (기본) |
 | 대화 중 개입 | ❌ |

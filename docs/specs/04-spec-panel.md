@@ -43,7 +43,7 @@ v3 · updated 21:34:12
 3. `spec:updated` 이벤트 발생 → IPC → renderer → `updateSpec(spec)`
 4. Spec 패널 자동 업데이트
 
-## Approve 플로우 (TODO — 핵심 기능)
+## Approve 플로우
 
 레퍼런스 동작:
 1. Coordinator가 Spec 초안(draft) 생성
@@ -54,12 +54,19 @@ v3 · updated 21:34:12
 ### 구현 방법
 - `spec.status === 'draft'` 일 때 Approve 버튼 표시
 - 클릭 → `agent:approveSpec` IPC → `LivingSpec.approve()`
-- 현재: 자동 approve (`spec.approve('auto')`) → 사용자 개입 없음
+- draft 편집 중에는 Approve 비활성화
+- 저장 완료 후 Approve 가능
 
-## Spec 직접 편집 (TODO)
+## Spec 직접 편집 (1차 구현 완료)
 
-- Spec 텍스트를 클릭하면 인라인 편집 모드
-- 수정 후 저장 → 에이전트에게 업데이트 전파
+- 현재 구현 범위:
+  - 승인 전(draft) tasklist 편집 UI
+  - task 추가/삭제
+  - description/priority/dependencies/files 편집
+  - 저장 시 `agent:updateSpecDraft` IPC를 통해 LivingSpec 갱신
+- 다음 단계:
+  - goal/constraints 인라인 편집
+  - diff-aware 편집 이력 표시
 
 ## 현재 구현 상태
 
@@ -71,6 +78,7 @@ v3 · updated 21:34:12
 | Tasks 목록 (✓→○) | ✓ |
 | Constraints | ✓ |
 | 버전/업데이트 시각 | ✓ |
-| **Approve 버튼** | ❌ 핵심 미구현 |
-| Spec 직접 편집 | ❌ |
-| 코드 블록 복사 버튼 | ❌ |
+| **Approve 버튼** | ✓ |
+| **Tasklist 편집 (draft)** | ✓ |
+| Goal/Constraint 인라인 편집 | ⏳ |
+| 코드 블록 복사 버튼 | ⏳ |

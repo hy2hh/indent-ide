@@ -13,6 +13,7 @@
 | 대화 패널 기본 | ✓ | ConversationPanel.tsx |
 | Spec 패널 기본 | ✓ | SpecPanel.tsx |
 | **Spec Approve UI** | ✓ | SpecPanel.tsx + AgentPipeline.ts |
+| **Draft tasklist 편집 (승인 전)** | ✓ | SpecPanel.tsx + `agent:updateSpecDraft` IPC |
 | **실제 스트리밍** | ✓ | CoordinatorAgent.ts |
 | **실제 PTY 터미널** | ✓ | TerminalPanel.tsx + terminal.ts IPC |
 | **세션 복원** | ✓ | App.tsx (localStorage) |
@@ -22,12 +23,15 @@
 | Git Worktree 관리 | ✓ | WorktreeManager.ts |
 | IPC 브릿지 전체 | ✓ | electron/ipc/ |
 | 실시간 이벤트 → UI | ✓ | agentStore.ts |
-| @ 멘션 | ❌ | 저우선순위 |
-| PR 실제 생성 (gh CLI) | ❌ | ChangesPanel PR 폼 stub |
+| @ 멘션 (기본) | ✓ | ConversationPanel.tsx |
+| PR 실제 생성 (gh CLI) | ✓ | file-system.ts + ChangesPanel.tsx |
+| Checkpoint/restore (quick) | ✓ | agentStore + AgentSidebar |
+| Checkpoint list/restore/delete | ✓ | AgentSidebar + fs IPC |
+| Checkpoint rename + preview diff | ✓ | AgentSidebar + agentStore + fs IPC |
+| Edit-management UX (file+selection+undo/redo+batch) | ✓ | ChangesPanel file/multi-file/selection stage-revert + drag range + multi-hunk batch + undo/redo |
 | 다중 에이전트 탭 | ❌ | 저우선순위 |
 
 ## 남은 TODO (저우선순위)
 
-1. **@ 멘션** — `@파일`, `@에이전트` 드롭다운 입력
-2. **PR 실제 생성** — `gh pr create` CLI 연동
-3. **다중 에이전트 탭** — Implementor마다 별도 탭
+1. **다중 에이전트 탭 고도화** — 탭 pin/close/검색 UX
+2. **Edit-management UX 고도화** — 선택 필터(폴더/확장자) + 히스토리 검색/컨텍스트 프리뷰

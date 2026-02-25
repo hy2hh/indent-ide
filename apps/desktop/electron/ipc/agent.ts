@@ -1,18 +1,23 @@
 import type { IpcMain } from 'electron';
-import { AgentPipeline, MessageBus, WorktreeManager, ModelProfile, ModelAssigner } from '@intent-ide/agent-orchestrator';
+import { AgentPipeline, MessageBus, WorktreeManager, ModelProfile, ModelAssigner, createAgentMessage } from '@intent-ide/agent-orchestrator';
 import { LivingSpec } from '@intent-ide/agent-orchestrator';
 import { CliRegistry, PromptBuilder, ModelRouter } from '@intent-ide/llm-orchestrator';
 import { ContextWindowManager, ContextRetriever, VectorStore, EmbeddingService } from '@intent-ide/context-engine';
 import { CoordinatorAgent } from '@intent-ide/agent-orchestrator';
 import { ImplementorAgent } from '@intent-ide/agent-orchestrator';
 import { VerifierAgent } from '@intent-ide/agent-orchestrator';
-import type { CliModelProfile } from '@intent-ide/core';
+import type { CliModelProfile, DraftSpecTaskInput, LivingSpecData } from '@intent-ide/core';
 
 interface AgentServices {
   pipeline?: AgentPipeline;
   messageBus?: MessageBus;
   worktreeManager?: WorktreeManager;
   currentSpec?: LivingSpec;
+  unwatchSpec?: () => void;
+}
+
+interface UpdateDraftSpecPayload {
+  tasks: DraftSpecTaskInput[];
 }
 
 const services: AgentServices = {};
@@ -31,6 +36,10 @@ export function setupAgentIpc(ipcMain: IpcMain): void {
   ipcMain.handle(
     'agent:startPipeline',
     async (event, goal: string, projectPath: string) => {
+      services.unwatchSpec?.();
+      services.unwatchSpec = undefined;
+      services.currentSpec = undefined;
+
       const registry = cliRegistry ?? new CliRegistry();
       if (!detectedCLIs) {
         detectedCLIs = await registry.detectInstalled();
@@ -98,10 +107,22 @@ export function setupAgentIpc(ipcMain: IpcMain): void {
             taskId,
           }),
         onSpecCreated: (spec) => {
-          // spec이 생성되면 services에 저장 (approve 연결용)
+          services.unwatchSpec?.();
           services.currentSpec = spec;
-          // draft 상태를 renderer에 알림
-          event.sender.send('agent:specUpdated', spec.getData());
+
+          const handleSpecUpdated = (specData: LivingSpecData) => {
+            messageBus.publish(
+              'spec:updated',
+              createAgentMessage('spec', 'broadcast', 'status', { spec: specData })
+            );
+          };
+
+          spec.on('spec:updated', handleSpecUpdated);
+          services.unwatchSpec = () => {
+            spec.off('spec:updated', handleSpecUpdated);
+          };
+
+          handleSpecUpdated(spec.getData());
         },
       });
 
@@ -129,6 +150,39 @@ export function setupAgentIpc(ipcMain: IpcMain): void {
       services.currentSpec.approve('user');
     }
     return { approved: true };
+  });
+
+  ipcMain.handle('agent:updateSpecDraft', async (_, payload: UpdateDraftSpecPayload) => {
+    const spec = services.currentSpec;
+    if (!spec) {
+      return { success: false, error: 'No active spec to edit.' };
+    }
+
+    const specData = spec.getData();
+    if (specData.status !== 'draft') {
+      return { success: false, error: 'Spec is no longer editable.' };
+    }
+
+    const existingById = new Map(specData.tasks.map((task) => [task.id, task]));
+    const nextTasks = (payload.tasks ?? []).map((task, index): DraftSpecTaskInput => {
+      const existing = task.id ? existingById.get(task.id) : undefined;
+      const fallbackId = existing?.id ?? `task-${index + 1}`;
+
+      return {
+        id: task.id ?? fallbackId,
+        description: task.description,
+        priority: task.priority ?? existing?.priority ?? 'medium',
+        dependencies: task.dependencies ?? existing?.dependencies ?? [],
+        files: task.files ?? existing?.files ?? [],
+      };
+    });
+
+    const updated = spec.setDraftTasks(nextTasks, 'user');
+    if (!updated) {
+      return { success: false, error: 'Failed to update draft tasks.' };
+    }
+
+    return { success: true, spec: spec.getData() };
   });
 
   ipcMain.handle(

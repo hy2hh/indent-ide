@@ -9,7 +9,9 @@
     "test": "turbo test",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "watchdog:gate": "bash ./scripts/watchdog-gate.sh",
+    "loop:auto": "bash ./scripts/auto-loop.sh"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",

@@ -1,14 +1,65 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useAgentStore, type ConversationItemType } from '../../stores/agentStore.js';
+import type { FileTreeNode } from '@intent-ide/core';
+import { useAgentStore, type ConversationItemType, type PipelineStatus } from '../../stores/agentStore.js';
 import { useProjectStore } from '../../stores/projectStore.js';
+
+interface MentionCandidate {
+  value: string;
+  label: string;
+  kind: 'agent' | 'file';
+}
+
+const AGENT_MENTIONS: MentionCandidate[] = [
+  { value: 'coordinator', label: 'coordinator', kind: 'agent' },
+  { value: 'verifier', label: 'verifier', kind: 'agent' },
+];
+
+function collectFileMentions(nodes: FileTreeNode[], out: MentionCandidate[], limit: number): void {
+  for (const node of nodes) {
+    if (out.length >= limit) {
+      return;
+    }
+    if (node.type === 'file') {
+      out.push({
+        value: node.path,
+        label: node.path,
+        kind: 'file',
+      });
+    } else if (node.children && node.children.length > 0) {
+      collectFileMentions(node.children, out, limit);
+    }
+  }
+}
+
+function buildMentionCandidates(fileTree: FileTreeNode[]): MentionCandidate[] {
+  const files: MentionCandidate[] = [];
+  collectFileMentions(fileTree, files, 120);
+  return [...AGENT_MENTIONS, ...files];
+}
 
 export const ConversationPanel = React.memo(function ConversationPanel() {
   const [input, setInput] = useState('');
+  const [queuedGoals, setQueuedGoals] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const autoStartInFlightRef = useRef(false);
   const { startPipeline, cancelPipeline, pipelineStatus, currentSpec, conversationItems } = useAgentStore();
-  const { projectPath } = useProjectStore();
+  const { projectPath, fileTree } = useProjectStore();
+  const previousStatusRef = useRef<PipelineStatus>(pipelineStatus);
 
   const isRunning = pipelineStatus === 'running';
+  const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
+  const mentionQuery = mentionMatch ? mentionMatch[1] ?? '' : null;
+
+  const mentionCandidates = React.useMemo(() => buildMentionCandidates(fileTree), [fileTree]);
+  const mentionSuggestions = React.useMemo(() => {
+    if (mentionQuery === null) {
+      return [] as MentionCandidate[];
+    }
+    const query = mentionQuery.toLowerCase();
+    return mentionCandidates
+      .filter((candidate) => candidate.label.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [mentionCandidates, mentionQuery]);
 
   // 동적 탭 생성
   const tabs = React.useMemo(() => {
@@ -48,9 +99,13 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
 
   // 탭별 필터링된 아이템
   const filteredItems = React.useMemo(() => {
-    if (activeTab === 'coordinator') return conversationItems;
+    if (activeTab === 'coordinator') {
+      return conversationItems;
+    }
     return conversationItems.filter(item => {
-      if ('agentId' in item) return item.agentId === activeTab;
+      if ('agentId' in item) {
+        return item.agentId === activeTab;
+      }
       return false;
     });
   }, [conversationItems, activeTab]);
@@ -59,10 +114,63 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [filteredItems.length]);
 
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+    previousStatusRef.current = pipelineStatus;
+
+    const hasJustFinished =
+      previousStatus === 'running' &&
+      (pipelineStatus === 'completed' || pipelineStatus === 'failed');
+
+    if (!hasJustFinished || queuedGoals.length === 0 || !projectPath || autoStartInFlightRef.current) {
+      return;
+    }
+
+    const [nextGoal, ...rest] = queuedGoals;
+    if (!nextGoal) {
+      return;
+    }
+    setQueuedGoals(rest);
+
+    autoStartInFlightRef.current = true;
+    void startPipeline(nextGoal, projectPath).finally(() => {
+      autoStartInFlightRef.current = false;
+    });
+  }, [pipelineStatus, queuedGoals, projectPath, startPipeline]);
+
+  useEffect(() => {
+    setQueuedGoals([]);
+  }, [projectPath]);
+
+  const applyMention = useCallback((candidate: MentionCandidate) => {
+    setInput((prev) => {
+      const match = prev.match(/(?:^|\s)@([^\s@]*)$/);
+      if (!match || match.index === undefined) {
+        return prev;
+      }
+      const fullToken = match[0];
+      const tokenStart = match.index + (fullToken.startsWith(' ') ? 1 : 0);
+      return `${prev.slice(0, tokenStart)}@${candidate.value} `;
+    });
+  }, []);
+
+  const removeQueuedGoal = useCallback((index: number) => {
+    setQueuedGoals((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isRunning || !projectPath) return;
+    if (!input.trim() || !projectPath) {
+      return;
+    }
+
     const goal = input.trim();
     setInput('');
+
+    if (isRunning || autoStartInFlightRef.current) {
+      setQueuedGoals((prev) => [...prev, goal]);
+      return;
+    }
+
     await startPipeline(goal, projectPath);
   }, [input, isRunning, projectPath, startPipeline]);
 
@@ -162,17 +270,73 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
 
       {/* Input Area */}
       <div className='flex-shrink-0 border-t border-[#2a2a33]'>
+        {queuedGoals.length > 0 && (
+          <div className='px-4 pt-2'>
+            <div className='rounded border border-[#2a2a33] bg-[#1c1c22] px-2 py-2'>
+              <div className='flex items-center justify-between mb-1'>
+                <p className='text-[10px] text-[#888892] uppercase tracking-wider'>
+                  Queue ({queuedGoals.length})
+                </p>
+                <button
+                  onClick={() => setQueuedGoals([])}
+                  className='text-[10px] text-[#666672] hover:text-[#e4e4eb] transition-colors'
+                >
+                  Clear
+                </button>
+              </div>
+              <div className='space-y-1 max-h-24 overflow-y-auto'>
+                {queuedGoals.map((goal, idx) => (
+                  <div key={`${goal}-${idx}`} className='flex items-center gap-2'>
+                    <span className='text-[10px] text-[#505060] flex-shrink-0'>{idx + 1}.</span>
+                    <p className='text-xs text-[#c4c4cc] truncate flex-1'>{goal}</p>
+                    <button
+                      onClick={() => removeQueuedGoal(idx)}
+                      className='text-[10px] text-[#666672] hover:text-[#e4e4eb] transition-colors'
+                      title='Remove queued goal'
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         <div className='px-4 pt-3 pb-1'>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isRunning ? 'Agent is working...' : 'Describe what you want to build or change...'}
-            disabled={isRunning}
+            placeholder={isRunning ? 'Agent is working... Add another goal to queue.' : 'Describe what you want to build or change...'}
             rows={2}
-            className='w-full bg-transparent text-sm text-[#e4e4eb] placeholder-[#505060] focus:outline-none disabled:opacity-50 resize-none leading-relaxed'
+            className='w-full bg-transparent text-sm text-[#e4e4eb] placeholder-[#505060] focus:outline-none resize-none leading-relaxed'
           />
         </div>
+
+        {mentionSuggestions.length > 0 && (
+          <div className='px-4 pb-1'>
+            <div className='rounded border border-[#2a2a33] bg-[#1c1c22] overflow-hidden max-h-32 overflow-y-auto'>
+              {mentionSuggestions.map((candidate) => (
+                <button
+                  key={`${candidate.kind}:${candidate.value}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    applyMention(candidate);
+                  }}
+                  className='w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-[#222228] transition-colors'
+                >
+                  <span className='text-xs text-[#e4e4eb] truncate'>
+                    @{candidate.label}
+                  </span>
+                  <span className='text-[10px] uppercase tracking-wide text-[#666672] flex-shrink-0'>
+                    {candidate.kind}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className='flex items-center justify-between px-4 pb-3 pt-1'>
           <span className='text-xs text-[#505060]'>
             Claude Opus 4.6 · {projectPath?.split('/').pop()}
@@ -180,13 +344,13 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
           <div className='flex items-center gap-3'>
             <button
               onClick={() => void handleSend()}
-              disabled={isRunning || !input.trim()}
+              disabled={!input.trim() || !projectPath}
               className='flex items-center gap-1.5 px-3 py-1 bg-[#9333ea] hover:bg-[#7e22ce] disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs transition-colors'
             >
               <svg width='12' height='12' viewBox='0 0 12 12' fill='none'>
                 <path d='M2 6l7-4-3 8-1-3-3-1z' stroke='white' strokeWidth='1.2' strokeLinecap='round' strokeLinejoin='round' />
               </svg>
-              Run
+              {isRunning ? 'Queue' : 'Run'}
             </button>
           </div>
         </div>

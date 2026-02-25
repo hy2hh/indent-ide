@@ -98,4 +98,32 @@ describe('LivingSpec', () => {
 
     expect(eventFired).toBe(true);
   });
+
+  it('should replace draft tasks via setDraftTasks', () => {
+    const spec = LivingSpec.create('session-1', 'Test goal', 'context');
+
+    const updated = spec.setDraftTasks([
+      { id: 'task-a', description: 'Implement API', files: ['src/api.ts'] },
+      { id: 'task-a', description: 'Write tests', dependencies: ['task-a'] },
+      { description: '  ' },
+    ], 'user');
+
+    expect(updated).toBe(true);
+    const data = spec.getData();
+    expect(data.tasks).toHaveLength(2);
+    expect(data.tasks[0]?.id).toBe('task-a');
+    expect(data.tasks[0]?.files).toEqual(['src/api.ts']);
+    expect(data.tasks[1]?.id).toBe('task-a-2');
+    expect(data.tasks[1]?.dependencies).toEqual(['task-a']);
+  });
+
+  it('should reject setDraftTasks once approved', () => {
+    const spec = LivingSpec.create('session-1', 'Test goal', 'context');
+    spec.approve('user');
+
+    const updated = spec.setDraftTasks([{ description: 'Should fail' }], 'user');
+
+    expect(updated).toBe(false);
+    expect(spec.getData().tasks).toHaveLength(0);
+  });
 });

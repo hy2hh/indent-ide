@@ -22,7 +22,7 @@ export default React.memo(function App() {
       useProjectStore.setState({ projectPath: lastPath });
       void useProjectStore.getState().refreshFileTree();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // 프로젝트 경로 변경 시 localStorage에 저장
   useEffect(() => {
