@@ -18,6 +18,10 @@ export const AgentSidebar = React.memo(function AgentSidebar() {
     pipelineStatus,
     conversationItems,
     currentSpec,
+    queuedGoals,
+    isQueuePaused,
+    toggleQueuePaused,
+    clearQueuedGoals,
     checkpoints,
     reset,
     createCheckpoint,
@@ -240,6 +244,29 @@ export const AgentSidebar = React.memo(function AgentSidebar() {
                 ? 'Pipeline failed.'
                 : 'Ready.'}
         </p>
+        {queuedGoals.length > 0 && (
+          <div className='mt-2 rounded border border-[#2a2a33] bg-[#141419] px-2 py-1.5'>
+            <div className='flex items-center justify-between'>
+              <span className='text-[10px] uppercase tracking-wider text-[#888892]'>
+                Queue {queuedGoals.length}
+              </span>
+              <div className='flex items-center gap-2'>
+                <button
+                  onClick={() => toggleQueuePaused()}
+                  className='text-[10px] text-[#6b8fd4] hover:text-[#93c5fd] transition-colors'
+                >
+                  {isQueuePaused ? 'Resume' : 'Pause'}
+                </button>
+                <button
+                  onClick={() => clearQueuedGoals()}
+                  className='text-[10px] text-[#666672] hover:text-[#c4c4cc] transition-colors'
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

@@ -95,13 +95,21 @@ export type ConversationItemType =
 
 interface AgentStoreState {
   pipelineStatus: PipelineStatus;
+  activeProjectPath: string | null;
   currentSessionId: string | null;
   currentSpec: LivingSpecData | null;
   checkpoints: CheckpointSummary[];
   agentStates: Record<string, AgentState>;
   events: AgentEvent[];
   conversationItems: ConversationItemType[];
+  queuedGoals: string[];
+  isQueuePaused: boolean;
   detectedCLIs: Record<string, boolean>;
+  enqueueGoal: (goal: string) => void;
+  removeQueuedGoal: (index: number) => void;
+  clearQueuedGoals: () => void;
+  setQueuePaused: (paused: boolean) => void;
+  toggleQueuePaused: () => void;
   startPipeline: (goal: string, projectPath: string) => Promise<void>;
   approveSpec: () => Promise<void>;
   updateSpecDraft: (tasks: DraftSpecTaskInput[]) => Promise<boolean>;
@@ -447,23 +455,66 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
 
   return ({
   pipelineStatus: 'idle',
+  activeProjectPath: null,
   currentSessionId: null,
   currentSpec: null,
   checkpoints: [],
   agentStates: {},
   events: [],
   conversationItems: [],
+  queuedGoals: [],
+  isQueuePaused: false,
   detectedCLIs: {},
 
+  enqueueGoal: (goal: string) => {
+    const normalizedGoal = goal.trim();
+    if (!normalizedGoal) {
+      return;
+    }
+    set((state) => ({
+      queuedGoals: [...state.queuedGoals, normalizedGoal].slice(0, 30),
+    }));
+  },
+
+  removeQueuedGoal: (index: number) => {
+    set((state) => ({
+      queuedGoals: state.queuedGoals.filter((_, idx) => idx !== index),
+    }));
+  },
+
+  clearQueuedGoals: () => {
+    set({ queuedGoals: [] });
+  },
+
+  setQueuePaused: (paused: boolean) => {
+    set({ isQueuePaused: paused });
+  },
+
+  toggleQueuePaused: () => {
+    set((state) => ({ isQueuePaused: !state.isQueuePaused }));
+  },
+
   startPipeline: async (goal: string, projectPath: string) => {
+    const normalizedGoal = goal.trim();
+    if (!normalizedGoal) {
+      return;
+    }
+
+    const snapshot = get();
+    if (snapshot.pipelineStatus === 'running') {
+      snapshot.enqueueGoal(normalizedGoal);
+      return;
+    }
+
     // 이전 구독 정리
     eventUnsubscribe?.();
     specUnsubscribe?.();
 
     set({
       pipelineStatus: 'running',
+      activeProjectPath: projectPath,
       events: [],
-      conversationItems: [{ type: 'goal', content: goal }],
+      conversationItems: [{ type: 'goal', content: normalizedGoal }],
       currentSpec: null,
     });
 
@@ -478,10 +529,26 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
       }
 
       // 파이프라인 완료/실패 처리
+      let shouldStartQueuedGoal = false;
       if (event.channel === 'pipeline:completed') {
         set({ pipelineStatus: 'completed' });
+        shouldStartQueuedGoal = true;
       } else if (event.channel === 'pipeline:failed') {
         set({ pipelineStatus: 'failed' });
+        shouldStartQueuedGoal = true;
+      }
+
+      if (shouldStartQueuedGoal) {
+        const latest = get();
+        if (!latest.isQueuePaused && latest.queuedGoals.length > 0 && latest.activeProjectPath) {
+          const [nextGoal, ...rest] = latest.queuedGoals;
+          if (nextGoal) {
+            set({ queuedGoals: rest });
+            window.setTimeout(() => {
+              void get().startPipeline(nextGoal, latest.activeProjectPath as string);
+            }, 0);
+          }
+        }
       }
     });
 
@@ -492,7 +559,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
     });
 
     try {
-      const result = await window.intentIde.agent.startPipeline(goal, projectPath) as { sessionId: string };
+      const result = await window.intentIde.agent.startPipeline(normalizedGoal, projectPath) as { sessionId: string };
       set({ currentSessionId: result.sessionId });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -714,7 +781,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
     const { currentSessionId } = get();
     if (!currentSessionId) {return;}
     await window.intentIde.agent.cancelPipeline(currentSessionId);
-    set({ pipelineStatus: 'idle' });
+    set({ pipelineStatus: 'idle', currentSessionId: null });
     eventUnsubscribe?.();
     specUnsubscribe?.();
   },
@@ -740,11 +807,14 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
     specUnsubscribe?.();
     set({
       pipelineStatus: 'idle',
+      activeProjectPath: null,
       currentSessionId: null,
       currentSpec: null,
       agentStates: {},
       events: [],
       conversationItems: [],
+      queuedGoals: [],
+      isQueuePaused: false,
     });
   },
   });

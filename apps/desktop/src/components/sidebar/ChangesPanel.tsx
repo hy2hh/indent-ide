@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore.js';
 import { useAgentStore } from '../../stores/agentStore.js';
+import { useUiStore } from '../../stores/uiStore.js';
 
 interface ChangedFile {
   path: string;
@@ -88,6 +89,7 @@ const EDIT_HISTORY_STORAGE_PREFIX = 'intent-ide:changes:edit-history:';
 export const ChangesPanel = React.memo(function ChangesPanel() {
   const { projectPath } = useProjectStore();
   const { pipelineStatus } = useAgentStore();
+  const { openBrowserUrl } = useUiStore();
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [diffLines, setDiffLines] = useState<DiffLine[]>([]);
@@ -184,8 +186,8 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
     if (!prFeedback?.url) {
       return;
     }
-    await window.intentIde.fs.openExternal(prFeedback.url);
-  }, [prFeedback]);
+    openBrowserUrl(prFeedback.url);
+  }, [prFeedback, openBrowserUrl]);
 
   // 파일 diff 로드
   const loadDiff = useCallback(async (filePath: string) => {
@@ -1329,7 +1331,7 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
                 onClick={() => void handleOpenPrUrl()}
                 className='text-[10px] text-[#6b8fd4] hover:text-[#93c5fd] transition-colors flex-shrink-0'
               >
-                Open PR
+                Open in IDE
               </button>
             )}
           </div>

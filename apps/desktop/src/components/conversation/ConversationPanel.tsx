@@ -1,18 +1,40 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { FileTreeNode } from '@intent-ide/core';
-import { useAgentStore, type ConversationItemType, type PipelineStatus } from '../../stores/agentStore.js';
+import { useAgentStore, type ConversationItemType } from '../../stores/agentStore.js';
 import { useProjectStore } from '../../stores/projectStore.js';
 
 interface MentionCandidate {
   value: string;
   label: string;
   kind: 'agent' | 'file';
+  activity?: 'running' | 'idle';
 }
 
-const AGENT_MENTIONS: MentionCandidate[] = [
-  { value: 'coordinator', label: 'coordinator', kind: 'agent' },
-  { value: 'verifier', label: 'verifier', kind: 'agent' },
-];
+function buildAgentMentions(conversationItems: ConversationItemType[]): MentionCandidate[] {
+  const activityMap = new Map<string, MentionCandidate['activity']>([
+    ['coordinator', 'idle'],
+    ['verifier', 'idle'],
+  ]);
+
+  for (const item of conversationItems) {
+    if (item.type === 'agent-started' || item.type === 'agent-progress') {
+      activityMap.set(item.agentId, 'running');
+      continue;
+    }
+    if (item.type === 'agent-completed' || item.type === 'agent-failed') {
+      activityMap.set(item.agentId, 'idle');
+    }
+  }
+
+  return [...activityMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([agentId, activity]) => ({
+      value: agentId,
+      label: agentId,
+      kind: 'agent' as const,
+      activity: activity ?? 'idle',
+    }));
+}
 
 function collectFileMentions(nodes: FileTreeNode[], out: MentionCandidate[], limit: number): void {
   for (const node of nodes) {
@@ -31,26 +53,41 @@ function collectFileMentions(nodes: FileTreeNode[], out: MentionCandidate[], lim
   }
 }
 
-function buildMentionCandidates(fileTree: FileTreeNode[]): MentionCandidate[] {
+function buildMentionCandidates(
+  fileTree: FileTreeNode[],
+  conversationItems: ConversationItemType[],
+): MentionCandidate[] {
+  const agents = buildAgentMentions(conversationItems);
   const files: MentionCandidate[] = [];
   collectFileMentions(fileTree, files, 120);
-  return [...AGENT_MENTIONS, ...files];
+  return [...agents, ...files];
 }
 
 export const ConversationPanel = React.memo(function ConversationPanel() {
   const [input, setInput] = useState('');
-  const [queuedGoals, setQueuedGoals] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const autoStartInFlightRef = useRef(false);
-  const { startPipeline, cancelPipeline, pipelineStatus, currentSpec, conversationItems } = useAgentStore();
+  const {
+    startPipeline,
+    cancelPipeline,
+    pipelineStatus,
+    currentSpec,
+    conversationItems,
+    queuedGoals,
+    removeQueuedGoal,
+    clearQueuedGoals,
+    isQueuePaused,
+    toggleQueuePaused,
+  } = useAgentStore();
   const { projectPath, fileTree } = useProjectStore();
-  const previousStatusRef = useRef<PipelineStatus>(pipelineStatus);
 
   const isRunning = pipelineStatus === 'running';
   const mentionMatch = input.match(/(?:^|\s)@([^\s@]*)$/);
   const mentionQuery = mentionMatch ? mentionMatch[1] ?? '' : null;
 
-  const mentionCandidates = React.useMemo(() => buildMentionCandidates(fileTree), [fileTree]);
+  const mentionCandidates = React.useMemo(
+    () => buildMentionCandidates(fileTree, conversationItems),
+    [fileTree, conversationItems]
+  );
   const mentionSuggestions = React.useMemo(() => {
     if (mentionQuery === null) {
       return [] as MentionCandidate[];
@@ -114,34 +151,6 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [filteredItems.length]);
 
-  useEffect(() => {
-    const previousStatus = previousStatusRef.current;
-    previousStatusRef.current = pipelineStatus;
-
-    const hasJustFinished =
-      previousStatus === 'running' &&
-      (pipelineStatus === 'completed' || pipelineStatus === 'failed');
-
-    if (!hasJustFinished || queuedGoals.length === 0 || !projectPath || autoStartInFlightRef.current) {
-      return;
-    }
-
-    const [nextGoal, ...rest] = queuedGoals;
-    if (!nextGoal) {
-      return;
-    }
-    setQueuedGoals(rest);
-
-    autoStartInFlightRef.current = true;
-    void startPipeline(nextGoal, projectPath).finally(() => {
-      autoStartInFlightRef.current = false;
-    });
-  }, [pipelineStatus, queuedGoals, projectPath, startPipeline]);
-
-  useEffect(() => {
-    setQueuedGoals([]);
-  }, [projectPath]);
-
   const applyMention = useCallback((candidate: MentionCandidate) => {
     setInput((prev) => {
       const match = prev.match(/(?:^|\s)@([^\s@]*)$/);
@@ -154,10 +163,6 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
     });
   }, []);
 
-  const removeQueuedGoal = useCallback((index: number) => {
-    setQueuedGoals((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
   const handleSend = useCallback(async () => {
     if (!input.trim() || !projectPath) {
       return;
@@ -165,14 +170,8 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
 
     const goal = input.trim();
     setInput('');
-
-    if (isRunning || autoStartInFlightRef.current) {
-      setQueuedGoals((prev) => [...prev, goal]);
-      return;
-    }
-
     await startPipeline(goal, projectPath);
-  }, [input, isRunning, projectPath, startPipeline]);
+  }, [input, projectPath, startPipeline]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -277,12 +276,20 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
                 <p className='text-[10px] text-[#888892] uppercase tracking-wider'>
                   Queue ({queuedGoals.length})
                 </p>
-                <button
-                  onClick={() => setQueuedGoals([])}
-                  className='text-[10px] text-[#666672] hover:text-[#e4e4eb] transition-colors'
-                >
-                  Clear
-                </button>
+                <div className='flex items-center gap-3'>
+                  <button
+                    onClick={() => toggleQueuePaused()}
+                    className='text-[10px] text-[#8bb8ff] hover:text-[#bfd3ff] transition-colors'
+                  >
+                    {isQueuePaused ? 'Resume' : 'Pause'}
+                  </button>
+                  <button
+                    onClick={() => clearQueuedGoals()}
+                    className='text-[10px] text-[#666672] hover:text-[#e4e4eb] transition-colors'
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
               <div className='space-y-1 max-h-24 overflow-y-auto'>
                 {queuedGoals.map((goal, idx) => (
@@ -325,7 +332,14 @@ export const ConversationPanel = React.memo(function ConversationPanel() {
                   }}
                   className='w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-[#222228] transition-colors'
                 >
-                  <span className='text-xs text-[#e4e4eb] truncate'>
+                  <span className='text-xs text-[#e4e4eb] truncate flex items-center gap-1.5'>
+                    {candidate.kind === 'agent' && (
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          candidate.activity === 'running' ? 'bg-[#4ade80] animate-pulse' : 'bg-[#64748b]'
+                        }`}
+                      />
+                    )}
                     @{candidate.label}
                   </span>
                   <span className='text-[10px] uppercase tracking-wide text-[#666672] flex-shrink-0'>
