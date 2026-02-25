@@ -1,5 +1,5 @@
-import type { IpcMain, BrowserWindow } from 'electron';
-import { dialog, shell } from 'electron';
+import type { IpcMain } from 'electron';
+import { BrowserWindow, dialog, shell } from 'electron';
 import { readFile, writeFile, readdir, stat, mkdir, unlink, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
