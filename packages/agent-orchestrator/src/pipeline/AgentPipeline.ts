@@ -121,18 +121,18 @@ export class AgentPipeline {
   }
 
   private async waitForApproval(spec: LivingSpec): Promise<void> {
-    // Poll for user approval — UI calls spec.approve() via IPC agent:approveSpec
+    if (spec.isApproved()) {
+      return;
+    }
+
     return new Promise((resolve) => {
-      if (spec.isApproved()) {
-        resolve();
-        return;
-      }
-      const interval = setInterval(() => {
+      const handleUpdate = () => {
         if (spec.isApproved()) {
-          clearInterval(interval);
+          spec.off('spec:updated', handleUpdate);
           resolve();
         }
-      }, 200);
+      };
+      spec.on('spec:updated', handleUpdate);
     });
   }
 

@@ -104,12 +104,14 @@ interface AgentStoreState {
   conversationItems: ConversationItemType[];
   queuedGoals: string[];
   isQueuePaused: boolean;
+  autoApprove: boolean;
   detectedCLIs: Record<string, boolean>;
   enqueueGoal: (goal: string) => void;
   removeQueuedGoal: (index: number) => void;
   clearQueuedGoals: () => void;
   setQueuePaused: (paused: boolean) => void;
   toggleQueuePaused: () => void;
+  setAutoApprove: (enabled: boolean) => void;
   startPipeline: (goal: string, projectPath: string) => Promise<void>;
   approveSpec: () => Promise<void>;
   updateSpecDraft: (tasks: DraftSpecTaskInput[]) => Promise<boolean>;
@@ -368,16 +370,19 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
 
   const toCheckpointPayload = (state: Pick<AgentStoreState,
     'pipelineStatus' | 'currentSessionId' | 'currentSpec' | 'events' | 'conversationItems'>, createdAt: number, name?: string,
-  ): CheckpointPayload => ({
-    version: 1,
-    createdAt,
-    name: normalizeCheckpointName(name) ?? undefined,
-    pipelineStatus: state.pipelineStatus,
-    currentSessionId: state.currentSessionId,
-    currentSpec: state.currentSpec,
-    events: state.events,
-    conversationItems: state.conversationItems,
-  });
+  ): CheckpointPayload => {
+    const normalizedName = normalizeCheckpointName(name);
+    return {
+      version: 1,
+      createdAt,
+      ...(normalizedName ? { name: normalizedName } : {}),
+      pipelineStatus: state.pipelineStatus,
+      currentSessionId: state.currentSessionId,
+      currentSpec: state.currentSpec,
+      events: state.events,
+      conversationItems: state.conversationItems,
+    };
+  };
 
   const validateCheckpointFilePath = (projectPath: string, filePath: string):
   | { success: true; checkpointDir: string; normalizedFilePath: string }
@@ -464,6 +469,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
   conversationItems: [],
   queuedGoals: [],
   isQueuePaused: false,
+  autoApprove: true,
   detectedCLIs: {},
 
   enqueueGoal: (goal: string) => {
@@ -492,6 +498,10 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
 
   toggleQueuePaused: () => {
     set((state) => ({ isQueuePaused: !state.isQueuePaused }));
+  },
+
+  setAutoApprove: (enabled: boolean) => {
+    set({ autoApprove: enabled });
   },
 
   startPipeline: async (goal: string, projectPath: string) => {
@@ -556,6 +566,11 @@ export const useAgentStore = create<AgentStoreState>((set, get) => {
     specUnsubscribe = window.intentIde.agent.onSpecUpdated((raw: unknown) => {
       const spec = raw as LivingSpecData;
       get().updateSpec(spec);
+      
+      const latest = get();
+      if (latest.autoApprove && spec.status === 'draft') {
+        void latest.approveSpec();
+      }
     });
 
     try {

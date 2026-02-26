@@ -2,7 +2,7 @@ import type { AgentResult } from '@intent-ide/core';
 import { BaseAgent } from './BaseAgent.js';
 import type { BaseAgentOptions } from './BaseAgent.js';
 import type { LivingSpec } from '../spec/LivingSpec.js';
-import type { PromptBuilder, ModelRouter, StreamParser } from '@intent-ide/llm-orchestrator';
+import type { PromptBuilder, ModelRouter } from '@intent-ide/llm-orchestrator';
 import { StreamParser as StreamParserImpl } from '@intent-ide/llm-orchestrator';
 import type { ContextWindowManager } from '@intent-ide/context-engine';
 import type { WorktreeManager } from '../workspace/WorktreeManager.js';

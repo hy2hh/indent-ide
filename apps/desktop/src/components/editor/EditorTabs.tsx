@@ -28,12 +28,12 @@ export const EditorTabs = React.memo(function EditorTabs() {
   );
 
   if (tabs.length === 0) {
-    return <div className='h-9 border-b border-[#313244] bg-[#181825]' />;
+    return <div className='h-9 border-b border-[#1c222d] bg-[#0b0d12]' />;
   }
 
   return (
     <div
-      className='flex h-9 border-b border-[#313244] bg-[#181825] overflow-x-auto'
+      className='flex h-9 border-b border-[#1c222d] bg-[#0b0d12] overflow-x-auto no-scrollbar'
       onKeyDown={handleKeyDown}
     >
       {tabs.map((tab) => (
@@ -41,22 +41,22 @@ export const EditorTabs = React.memo(function EditorTabs() {
           key={tab.id}
           onClick={() => handleTabClick(tab.id)}
           className={`
-            flex items-center gap-2 px-3 h-full text-xs whitespace-nowrap border-r border-[#313244]
-            transition-colors min-w-0
+            group flex items-center gap-2 px-4 h-full text-[11px] whitespace-nowrap border-r border-[#1c222d]
+            transition-colors min-w-0 font-mono tracking-tight
             ${tab.id === activeTabId
-              ? 'bg-[#1e1e2e] text-[#cdd6f4] border-t-2 border-t-[#89b4fa]'
-              : 'bg-[#181825] text-[#6c7086] hover:bg-[#1e1e2e] hover:text-[#cdd6f4]'
+              ? 'bg-[#131722] text-[#e4e4eb] border-t-[3px] border-t-[#4f8cff]'
+              : 'bg-[#0b0d12] text-[#505060] hover:bg-[#131722]/50 hover:text-[#a1acc5] border-t-[3px] border-t-transparent'
             }
           `}
         >
           <span className='truncate max-w-32'>{tab.fileName}</span>
-          {tab.isDirty && <span className='w-2 h-2 rounded-full bg-[#f38ba8]' />}
+          {tab.isDirty && <span className='w-1.5 h-1.5 rounded-full bg-[#f59e0b]' />}
           <span
             role='button'
             tabIndex={0}
             onClick={(e) => handleClose(e, tab.id)}
             onKeyDown={(e) => { if (e.key === 'Enter') { handleClose(e as unknown as React.MouseEvent, tab.id); } }}
-            className='ml-1 hover:text-[#f38ba8] cursor-pointer'
+            className={`ml-1 cursor-pointer transition-opacity ${tab.id === activeTabId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} hover:text-[#ef4444] text-[14px] leading-none`}
             aria-label={`Close ${tab.fileName}`}
           >
             ×

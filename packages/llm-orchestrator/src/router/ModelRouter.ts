@@ -34,7 +34,7 @@ export class ModelRouter {
     if (!fallback) {
       throw new Error(
         `역할 '${role}'에 적합한 CLI를 찾을 수 없습니다. ` +
-        `'claude', 'codex', 'gemini' 중 하나를 설치해 주세요.`
+        '\'claude\', \'codex\', \'gemini\' 중 하나를 설치해 주세요.'
       );
     }
 

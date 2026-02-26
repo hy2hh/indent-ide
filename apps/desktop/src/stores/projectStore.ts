@@ -30,8 +30,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await get().refreshFileTree();
 
     // Subscribe to index progress
-    window.intentIde.context.onIndexProgress((progress) => {
-      get().setIndexProgress(progress);
+    window.intentIde.context.onIndexProgress((progress: unknown) => {
+      get().setIndexProgress(progress as number);
     });
   },
 
@@ -44,8 +44,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await get().refreshFileTree();
 
     // Subscribe to index progress
-    window.intentIde.context.onIndexProgress((progress) => {
-      get().setIndexProgress(progress);
+    window.intentIde.context.onIndexProgress((progress: unknown) => {
+      get().setIndexProgress(progress as number);
     });
   },
 

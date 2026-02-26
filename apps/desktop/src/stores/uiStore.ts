@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type RightPanelMode = 'spec' | 'browser';
+export type CenterPanelMode = 'conversation' | 'editor' | 'split';
 export type LayoutPresetId = 'default' | 'focus' | 'review' | 'custom';
 
 export interface WorkspaceLayout {
@@ -12,6 +13,7 @@ export interface WorkspaceLayout {
 interface UiStoreState {
   initialized: boolean;
   rightPanelMode: RightPanelMode;
+  centerPanelMode: CenterPanelMode;
   currentLayoutId: LayoutPresetId;
   layout: WorkspaceLayout;
   savedLayouts: Record<string, WorkspaceLayout>;
@@ -21,6 +23,7 @@ interface UiStoreState {
   browserRevision: number;
   initialize: () => void;
   setRightPanelMode: (mode: RightPanelMode) => void;
+  setCenterPanelMode: (mode: CenterPanelMode) => void;
   updateLayout: (patch: Partial<WorkspaceLayout>) => void;
   applyBuiltinLayout: (id: Exclude<LayoutPresetId, 'custom'>) => void;
   saveLayout: (name: string) => boolean;
@@ -35,6 +38,7 @@ interface UiStoreState {
 
 interface PersistedUiState {
   rightPanelMode: RightPanelMode;
+  centerPanelMode: CenterPanelMode;
   currentLayoutId: LayoutPresetId;
   layout: WorkspaceLayout;
   savedLayouts: Record<string, WorkspaceLayout>;
@@ -83,6 +87,7 @@ function normalizeUrl(value: string): string {
 function toPersistedState(state: UiStoreState): PersistedUiState {
   return {
     rightPanelMode: state.rightPanelMode,
+    centerPanelMode: state.centerPanelMode,
     currentLayoutId: state.currentLayoutId,
     layout: state.layout,
     savedLayouts: state.savedLayouts,
@@ -111,6 +116,10 @@ function readPersistedState(): PersistedUiState | null {
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedUiState>;
     const rightPanelMode = parsed.rightPanelMode === 'browser' ? 'browser' : 'spec';
+    const centerPanelMode =
+      parsed.centerPanelMode === 'editor' || parsed.centerPanelMode === 'split'
+        ? parsed.centerPanelMode
+        : 'conversation';
 
     const builtinLayout = parsed.currentLayoutId && parsed.currentLayoutId in BUILTIN_LAYOUTS
       ? BUILTIN_LAYOUTS[parsed.currentLayoutId as Exclude<LayoutPresetId, 'custom'>]
@@ -145,6 +154,7 @@ function readPersistedState(): PersistedUiState | null {
 
     return {
       rightPanelMode,
+      centerPanelMode,
       currentLayoutId,
       layout,
       savedLayouts,
@@ -160,6 +170,7 @@ function readPersistedState(): PersistedUiState | null {
 export const useUiStore = create<UiStoreState>((set, get) => ({
   initialized: false,
   rightPanelMode: 'spec',
+  centerPanelMode: 'conversation',
   currentLayoutId: 'default',
   layout: BUILTIN_LAYOUTS.default,
   savedLayouts: {},
@@ -177,6 +188,7 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
       set({
         initialized: true,
         rightPanelMode: persisted.rightPanelMode,
+        centerPanelMode: persisted.centerPanelMode,
         currentLayoutId: persisted.currentLayoutId,
         layout: persisted.layout,
         savedLayouts: persisted.savedLayouts,
@@ -194,6 +206,11 @@ export const useUiStore = create<UiStoreState>((set, get) => ({
 
   setRightPanelMode: (mode) => {
     set({ rightPanelMode: mode });
+    persistState(get());
+  },
+
+  setCenterPanelMode: (mode) => {
+    set({ centerPanelMode: mode });
     persistState(get());
   },
 

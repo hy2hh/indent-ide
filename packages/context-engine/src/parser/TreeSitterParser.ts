@@ -183,7 +183,6 @@ export class TreeSitterParser {
     }
 
     // Symbol-based chunking
-    let lastEnd = 0;
     for (let si = 0; si < symbols.length; si++) {
       const symbol = symbols[si];
       if (!symbol) {
@@ -203,7 +202,6 @@ export class TreeSitterParser {
         language,
         chunkType: symbol.type === 'function' ? 'function' : 'class',
       });
-      lastEnd = endLine;
     }
 
     // Add any leading content before first symbol

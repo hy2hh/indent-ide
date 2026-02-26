@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { LivingSpecData } from '@intent-ide/core';
 import { useProjectStore } from './stores/projectStore.js';
 import {
@@ -8,6 +8,7 @@ import {
   type PipelineStatus,
 } from './stores/agentStore.js';
 import { useUiStore } from './stores/uiStore.js';
+import { useEditorStore } from './stores/editorStore.js';
 import { AgentSidebar } from './components/sidebar/AgentSidebar.js';
 import { ConversationPanel } from './components/conversation/ConversationPanel.js';
 import { SpecPanel } from './components/spec/SpecPanel.js';
@@ -15,6 +16,8 @@ import { TerminalPanel } from './components/terminal/TerminalPanel.js';
 import { WelcomeScreen } from './components/welcome/WelcomeScreen.js';
 import { BrowserPanel } from './components/browser/BrowserPanel.js';
 import { CommandPalette } from './components/palette/CommandPalette.js';
+import { CodeEditor } from './components/editor/CodeEditor.js';
+import { EditorTabs } from './components/editor/EditorTabs.js';
 
 const PROJECT_STORAGE_KEY = 'intent-ide:lastProjectPath';
 const SESSION_STORAGE_KEY = 'intent-ide:lastSessionState:v1';
@@ -82,19 +85,29 @@ export default React.memo(function App() {
     initialize: initializeUi,
     layout,
     rightPanelMode,
+    centerPanelMode,
     currentLayoutId,
-    savedLayouts,
     applyBuiltinLayout,
-    applySavedLayout,
-    removeSavedLayout,
-    saveLayout,
     setRightPanelMode,
+    setCenterPanelMode,
     openBrowserUrl,
     updateLayout,
   } = useUiStore();
-  const [selectedSavedLayout, setSelectedSavedLayout] = useState('');
-  const savedLayoutNames = useMemo(() => Object.keys(savedLayouts).sort(), [savedLayouts]);
+  const { activeTabId } = useEditorStore();
   const resizeModeRef = useRef<ResizeMode | null>(null);
+
+  // 자동 모드 전환: 파일이 열리면 에디터로, 파이프라인이 시작되면 컨버세이션으로
+  useEffect(() => {
+    if (activeTabId && centerPanelMode === 'conversation') {
+      setCenterPanelMode('editor');
+    }
+  }, [activeTabId, centerPanelMode, setCenterPanelMode]);
+
+  useEffect(() => {
+    if (pipelineStatus === 'running' && centerPanelMode === 'editor') {
+      setCenterPanelMode('split');
+    }
+  }, [pipelineStatus, centerPanelMode, setCenterPanelMode]);
 
   // 앱 시작 시 초기화 + 세션 복원
   useEffect(() => {
@@ -161,19 +174,6 @@ export default React.memo(function App() {
     isQueuePaused,
   ]);
 
-  const handleSaveLayout = () => {
-    const value = window.prompt('Save current layout as:');
-    if (!value) {
-      return;
-    }
-    const ok = saveLayout(value);
-    if (!ok) {
-      return;
-    }
-    const normalized = value.trim().slice(0, 32);
-    setSelectedSavedLayout(normalized);
-  };
-
   const handleStartResize = (mode: ResizeMode) => {
     resizeModeRef.current = mode;
     document.body.style.cursor = mode === 'terminal' ? 'row-resize' : 'col-resize';
@@ -218,173 +218,198 @@ export default React.memo(function App() {
   }, [updateLayout]);
 
   return (
-    <div className='flex h-screen w-screen flex-col overflow-hidden bg-[#0f1116] text-[#eef2ff] text-sm select-none'>
+    <div className='flex h-screen w-screen flex-col overflow-hidden bg-[#0b0d12] text-[#e4e4eb] text-sm select-none'>
+      {/* Title Bar */}
       <div
-        className='relative flex h-[44px] flex-shrink-0 items-center border-b border-[#262d3d] bg-[#0b0d12]/95 px-3'
+        className='relative flex h-[40px] flex-shrink-0 items-center border-b border-[#1c222d] bg-[#0b0d12]/95 px-4'
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <div className='flex items-center gap-2' style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <span className='h-2.5 w-2.5 rounded-full bg-[#ff5f57]' />
-          <span className='h-2.5 w-2.5 rounded-full bg-[#febc2e]' />
-          <span className='h-2.5 w-2.5 rounded-full bg-[#28c840]' />
-          <span className='ml-3 text-[11px] tracking-wide text-[#a1acc5]'>Intent IDE</span>
+        {/* Left Side: Traffic Lights & Branding */}
+        <div className='flex items-center gap-2.5 mr-6' style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className='flex items-center gap-2'>
+            <span className='h-3 w-3 rounded-full bg-[#ff5f57]' />
+            <span className='h-3 w-3 rounded-full bg-[#febc2e]' />
+            <span className='h-3 w-3 rounded-full bg-[#28c840]' />
+          </div>
+          <span className='ml-2 text-[10px] font-black tracking-[0.2em] text-[#505060] uppercase'>Intent IDE</span>
         </div>
 
-        <div className='pointer-events-none absolute inset-x-0 flex justify-center px-24'>
-          <div
-            className='pointer-events-auto flex min-w-[320px] max-w-[640px] flex-1 items-center gap-2 rounded-md border border-[#262d3d] bg-[#131722]/90 px-3 py-1.5 text-xs text-[#a1acc5]'
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          >
-            <svg width='12' height='12' viewBox='0 0 12 12' fill='none' className='flex-shrink-0'>
-              <circle cx='5' cy='5' r='4' stroke='#7f8aa3' strokeWidth='1.2' />
-              <path d='M8.5 8.5L11 11' stroke='#7f8aa3' strokeWidth='1.2' strokeLinecap='round' />
+        {/* Center: Project Path / Search */}
+        <div className='flex-1 flex justify-center min-w-0' style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className='flex max-w-[580px] w-full items-center gap-2.5 rounded-lg border border-[#1c222d] bg-[#131722]/80 px-3 py-1.5 text-[11px] text-[#a1acc5] transition-all hover:bg-[#131722] hover:border-[#262d3d]'>
+            <svg width='11' height='11' viewBox='0 0 12 12' fill='none' className='flex-shrink-0 opacity-40'>
+              <circle cx='5' cy='5' r='4' stroke='#7f8aa3' strokeWidth='1.5' />
+              <path d='M8.5 8.5L11 11' stroke='#7f8aa3' strokeWidth='1.5' strokeLinecap='round' />
             </svg>
-            <span className='truncate'>
-              {projectPath ?? 'Open a project to begin'}
+            <span className='truncate font-mono opacity-60'>
+              {projectPath ?? 'Open a project to begin...'}
             </span>
           </div>
         </div>
 
-        <div className='ml-auto flex items-center gap-2' style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <select
-            value={currentLayoutId === 'custom' ? 'default' : currentLayoutId}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value === 'default' || value === 'focus' || value === 'review') {
-                applyBuiltinLayout(value);
-              }
-            }}
-            className='h-6 rounded border border-[#262d3d] bg-[#131722] px-2 text-[10px] text-[#a1acc5] focus:outline-none focus:border-[#4f8cff]'
-            title='Built-in workspace layouts'
-          >
-            <option value='default'>Layout: Default</option>
-            <option value='focus'>Layout: Focus</option>
-            <option value='review'>Layout: Review</option>
-          </select>
-          {savedLayoutNames.length > 0 && (
+        {/* Right Side: Controls */}
+        <div className='flex items-center gap-4 ml-6' style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className='flex items-center bg-[#131722] rounded-md border border-[#1c222d] p-0.5 shadow-inner'>
+            <button
+              onClick={() => setCenterPanelMode('conversation')}
+              className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                centerPanelMode === 'conversation' ? 'bg-[#1b315e] text-[#cfe0ff] shadow-sm' : 'text-[#505060] hover:text-[#a1acc5]'
+              }`}
+            >
+              CHAT
+            </button>
+            <button
+              onClick={() => setCenterPanelMode('editor')}
+              className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                centerPanelMode === 'editor' ? 'bg-[#1b315e] text-[#cfe0ff] shadow-sm' : 'text-[#505060] hover:text-[#a1acc5]'
+              }`}
+            >
+              CODE
+            </button>
+            <button
+              onClick={() => setCenterPanelMode('split')}
+              className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
+                centerPanelMode === 'split' ? 'bg-[#1b315e] text-[#cfe0ff] shadow-sm' : 'text-[#505060] hover:text-[#a1acc5]'
+              }`}
+            >
+              SPLIT
+            </button>
+          </div>
+
+          <div className='h-4 w-px bg-[#1c222d]' />
+
+          <div className='flex items-center gap-2'>
             <select
-              value={selectedSavedLayout}
+              value={currentLayoutId === 'custom' ? 'default' : currentLayoutId}
               onChange={(event) => {
                 const value = event.target.value;
-                setSelectedSavedLayout(value);
-                if (value) {
-                  applySavedLayout(value);
+                if (value === 'default' || value === 'focus' || value === 'review') {
+                  applyBuiltinLayout(value);
                 }
               }}
-              className='h-6 rounded border border-[#262d3d] bg-[#131722] px-2 text-[10px] text-[#a1acc5] focus:outline-none focus:border-[#4f8cff]'
-              title='Saved workspace layouts'
+              className='h-7 rounded-md border border-[#1c222d] bg-[#131722] px-2.5 text-[10px] text-[#a1acc5] focus:outline-none focus:border-[#4f8cff]/40 transition-colors cursor-pointer'
             >
-              <option value=''>Saved Layouts</option>
-              {savedLayoutNames.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
+              <option value='default'>Layout: Default</option>
+              <option value='focus'>Layout: Focus</option>
+              <option value='review'>Layout: Review</option>
             </select>
-          )}
-          <button
-            onClick={handleSaveLayout}
-            className='h-6 rounded border border-[#33405a] bg-[#142343] px-2 text-[10px] text-[#8bb8ff] hover:bg-[#1b315e] transition-colors'
-            title='Save current layout'
-          >
-            Save
-          </button>
-          {selectedSavedLayout && (
+            
             <button
-              onClick={() => {
-                removeSavedLayout(selectedSavedLayout);
-                setSelectedSavedLayout('');
-              }}
-              className='h-6 rounded border border-[#3e2a34] bg-[#1a1118] px-2 text-[10px] text-[#f2a8bf] hover:bg-[#241722] transition-colors'
-              title='Delete selected saved layout'
+              onClick={() => openBrowserUrl('http://localhost:3000')}
+              className='h-7 rounded-md border border-[#33405a] bg-[#0f1f3b] px-3 text-[10px] font-bold text-[#8bb8ff] hover:bg-[#1a315d] hover:border-[#4f8cff]/30 transition-all'
             >
-              Delete
+              LOCALHOST
             </button>
-          )}
-          <button
-            onClick={() => openBrowserUrl('http://localhost:3000')}
-            className='h-6 rounded border border-[#33405a] bg-[#0f1f3b] px-2 text-[10px] text-[#8bb8ff] hover:bg-[#1a315d] transition-colors'
-            title='Open local preview'
-          >
-            Localhost
-          </button>
-          <span className='rounded border border-[#33405a] bg-[#131722] px-1.5 py-0.5 text-[10px] text-[#8bb8ff]'>
-            {projectPath ? projectPath.split('/').pop() : 'No Project'}
-          </span>
-          <kbd className='rounded border border-[#262d3d] bg-[#131722] px-1.5 py-0.5 text-[10px] text-[#667085]'>⌘K</kbd>
+          </div>
+          
+          <kbd className='hidden lg:flex rounded border border-[#1c222d] bg-[#131722] px-2 py-0.5 text-[9px] font-bold text-[#383840] shadow-sm'>⌘K</kbd>
         </div>
       </div>
 
       {!projectPath ? (
         <WelcomeScreen />
       ) : (
-        <div className='flex min-h-0 flex-1'>
+        <div className='flex min-h-0 flex-1 overflow-hidden'>
+          {/* Left Sidebar */}
           <aside
-            className='flex flex-shrink-0 flex-col border-r border-[#262d3d] bg-[#131722]/90'
+            className='flex flex-shrink-0 flex-col border-r border-[#1c222d] bg-[#0b0d12]'
             style={{ width: `${layout.leftWidth}px` }}
           >
             <AgentSidebar />
           </aside>
+          
+          {/* Left Resizer */}
           <div
-            className='w-1 cursor-col-resize bg-transparent hover:bg-[#33405a]/55 transition-colors'
+            className='w-[2px] -ml-[1px] cursor-col-resize bg-transparent hover:bg-[#4f8cff]/40 transition-all z-20 group relative'
             onMouseDown={() => handleStartResize('left')}
-            role='separator'
-            aria-orientation='vertical'
-            title='Resize sidebar'
-          />
-
-          <div className='flex min-w-0 flex-1 flex-col bg-[#10141d]/80'>
-            <ConversationPanel />
+          >
+            <div className='absolute inset-y-0 -inset-x-1.5' /> {/* Expand hit area */}
           </div>
-          <div
-            className='w-1 cursor-col-resize bg-transparent hover:bg-[#33405a]/55 transition-colors'
-            onMouseDown={() => handleStartResize('right')}
-            role='separator'
-            aria-orientation='vertical'
-            title='Resize right panel'
-          />
 
+          {/* Main Area */}
+          <main className='flex min-w-0 flex-1 flex-col bg-[#0b0d12] relative'>
+            {centerPanelMode === 'conversation' && (
+              <ConversationPanel />
+            )}
+            {centerPanelMode === 'editor' && (
+              <div className='flex flex-col h-full'>
+                <EditorTabs />
+                <div className='flex-1 overflow-hidden'>
+                  <CodeEditor />
+                </div>
+              </div>
+            )}
+            {centerPanelMode === 'split' && (
+              <div className='flex flex-col h-full'>
+                <div className='flex-1 flex min-h-0'>
+                  <div className='flex-1 flex flex-col border-r border-[#1c222d]'>
+                    <ConversationPanel />
+                  </div>
+                  <div className='flex-1 flex flex-col'>
+                    <EditorTabs />
+                    <div className='flex-1 overflow-hidden'>
+                      <CodeEditor />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* Right Panel Resizer */}
+          <div
+            className='w-[2px] -mr-[1px] cursor-col-resize bg-transparent hover:bg-[#4f8cff]/40 transition-all z-20 group relative'
+            onMouseDown={() => handleStartResize('right')}
+          >
+            <div className='absolute inset-y-0 -inset-x-1.5' /> {/* Expand hit area */}
+          </div>
+
+          {/* Right Panel */}
           <aside
-            className='flex flex-shrink-0 flex-col bg-[#131722]/90'
+            className='flex flex-shrink-0 flex-col bg-[#0b0d12] border-l border-[#1c222d]'
             style={{ width: `${layout.rightWidth}px` }}
           >
-            <div className='flex h-9 flex-shrink-0 items-center justify-between border-b border-[#262d3d] px-3'>
-              <div className='flex items-center gap-1'>
+            <div className='flex h-[40px] flex-shrink-0 items-center justify-between border-b border-[#1c222d] px-4 bg-[#0b0d12] shadow-sm'>
+              <div className='flex items-center gap-1.5'>
                 <button
                   onClick={() => setRightPanelMode('spec')}
-                  className={`rounded px-2 py-1 text-[10px] transition-colors ${
+                  className={`rounded-md px-3 py-1 text-[9px] font-black uppercase tracking-widest transition-all ${
                     rightPanelMode === 'spec'
-                      ? 'bg-[#1b315e] text-[#cfe0ff]'
-                      : 'text-[#8c97b1] hover:bg-[#1a2030] hover:text-[#d6def2]'
+                      ? 'bg-[#1b315e] text-[#cfe0ff] shadow-sm'
+                      : 'text-[#505060] hover:text-[#a1acc5] hover:bg-[#131722]'
                   }`}
                 >
-                  Spec
+                  SPEC
                 </button>
                 <button
                   onClick={() => setRightPanelMode('browser')}
-                  className={`rounded px-2 py-1 text-[10px] transition-colors ${
+                  className={`rounded-md px-3 py-1 text-[9px] font-black uppercase tracking-widest transition-all ${
                     rightPanelMode === 'browser'
-                      ? 'bg-[#1b315e] text-[#cfe0ff]'
-                      : 'text-[#8c97b1] hover:bg-[#1a2030] hover:text-[#d6def2]'
+                      ? 'bg-[#1b315e] text-[#cfe0ff] shadow-sm'
+                      : 'text-[#505060] hover:text-[#a1acc5] hover:bg-[#131722]'
                   }`}
                 >
-                  Browser
+                  BROWSER
                 </button>
               </div>
-              <span className='text-[10px] uppercase tracking-wider text-[#667085]'>
-                {rightPanelMode === 'spec' ? 'Intent Notes' : 'Embedded Browser'}
+              <span className='text-[9px] uppercase tracking-[0.2em] text-[#383840] font-black'>
+                {rightPanelMode === 'spec' ? 'Intent Notes' : 'Live Preview'}
               </span>
             </div>
-            <div className='flex min-h-0 flex-1 flex-col'>
+            
+            <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
               {rightPanelMode === 'spec' ? <SpecPanel /> : <BrowserPanel />}
             </div>
+
+            {/* Terminal Resizer */}
             <div
-              className='h-1 cursor-row-resize bg-transparent hover:bg-[#33405a]/55 transition-colors'
+              className='h-[2px] -mt-[1px] cursor-row-resize bg-transparent hover:bg-[#4f8cff]/40 transition-all z-20 group relative'
               onMouseDown={() => handleStartResize('terminal')}
-              role='separator'
-              aria-orientation='horizontal'
-              title='Resize terminal'
-            />
+            >
+              <div className='absolute inset-x-0 -inset-y-1.5' /> {/* Expand hit area */}
+            </div>
             <div
-              className='flex-shrink-0 border-t border-[#262d3d]'
+              className='flex-shrink-0 border-t border-[#1c222d] bg-[#0b0d12]'
               style={{ height: `${layout.terminalHeight}px` }}
             >
               <TerminalPanel projectPath={projectPath} />

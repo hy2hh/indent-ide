@@ -319,7 +319,7 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
 
         return {
           success: false,
-          error: result.error,
+          ...(result.error ? { error: result.error } : {}),
           rollbackFailed,
           failedOperationIndex: index,
           failedOperation: operation,
@@ -763,7 +763,7 @@ export const ChangesPanel = React.memo(function ChangesPanel() {
     if (patches.length === 0) {
       return `${action} selection`;
     }
-    if (!hasBatchSelections && patches.length === 1) {
+    if (!hasBatchSelections && patches.length === 1 && patches[0]) {
       const patch = patches[0];
       return `${action} selection ${patch.rangeStart}-${patch.rangeEnd}`;
     }

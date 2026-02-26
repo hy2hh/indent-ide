@@ -142,4 +142,7 @@ Augment Intent 최신 공개 기능(`v0.2.x`)을 기준으로, Intent IDE의 기
 | Checkpoint/restore (quick) | ✅ | Save + Restore Latest |
 | Checkpoint list/restore/delete | ✅ | 리스트 표시 + 선택 복원 + 삭제 |
 | Checkpoint rename + preview diff | ✅ | 인라인 rename + 복원 전 상세 비교 |
+| Yolo Mode (Auto-Approve) | ✅ | Spec 생성 시 사용자 개입 없이 즉시 구현 착수 |
+| Inline Ask Agent (⌘K) | ✅ | 에디터 내 맥락 기반 자연어 명령 기능 |
+| Premium UI/UX Polish | ✅ | Deep Dark (#0b0d12) 테마 및 고도화된 레이아웃 |
 | Edit-management UX | ◑ | 파일/multi-file/selection stage-revert + drag range + multi-hunk batch + undo/redo + history 영속화 + 실패 롤백 + 히스토리 탐색/재적용 + 상세 에러 + diff preview + context 토글/검색 완료, preview 상호작용 고도화는 미완 |
